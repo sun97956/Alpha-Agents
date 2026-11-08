@@ -336,7 +336,8 @@ def _ge(value: float, threshold: float) -> bool:
     return (not math.isnan(value)) and value >= threshold
 
 
-def gate_train(report: Report, thresholds: dict) -> GateResult:
+def gate_train(report: Report, thresholds: dict,
+               expected_direction: Optional[int] = None) -> GateResult:
     t = thresholds["train"]
     ic = _f(report["ic_mean"])
     ir = _f(report["icir"])
@@ -344,6 +345,10 @@ def gate_train(report: Report, thresholds: dict) -> GateResult:
         _check("abs_ic_mean", abs(ic), t["abs_ic_mean_min"], _ge(abs(ic), _f(t["abs_ic_mean_min"]))),
         _check("abs_icir", abs(ir), t["abs_icir_min"], _ge(abs(ir), _f(t["abs_icir_min"]))),
     ]
+    if t.get("direction_must_match_hypothesis", False) and expected_direction is not None:
+        # IC 的符号必须等于假设声明的方向：value = sign(IC) * 预期方向，需为 +1
+        prod = float("nan") if math.isnan(ic) else float(np.sign(ic) * np.sign(expected_direction))
+        checks.append(_check("direction", prod, 1.0, (not math.isnan(prod)) and prod > 0))
     ref = report.get("max_ref_corr")
     lim = _f(t["max_abs_ref_corr"])
     if ref is None:

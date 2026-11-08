@@ -510,3 +510,24 @@ def test_real_rev5_ic_positive():
         assert rep["ic_mean"] > 0, e
         assert rep["n_days"] > 3000
         assert 400 <= rep["coverage_mean"] <= 520
+
+
+# ---------------------------------------------------------------------
+# 方向必须与假设一致（thresholds.train.direction_must_match_hypothesis）
+# ---------------------------------------------------------------------
+
+def test_thresholds_require_direction(thresholds):
+    assert thresholds["train"]["direction_must_match_hypothesis"] is True
+
+
+@pytest.mark.parametrize("ic,d,ok", [(0.03, 1, True), (-0.03, -1, True), (-0.03, 1, False), (0.03, -1, False)])
+def test_gate_train_direction(thresholds, ic, d, ok):
+    res = ev.gate_train(make_report(ic_mean=ic, icir=0.1 if ic > 0 else -0.1), thresholds, expected_direction=d)
+    c = checks_by_name(res)
+    assert c["direction"]["passed"] is ok
+    assert res["passed"] is ok
+
+
+def test_gate_train_without_direction_has_no_direction_check(thresholds):
+    res = ev.gate_train(make_report(), thresholds)
+    assert "direction" not in checks_by_name(res)

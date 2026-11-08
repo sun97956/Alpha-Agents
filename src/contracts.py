@@ -126,7 +126,11 @@ class Market:
 # def evaluate(factor: pd.DataFrame, market: Market, split: Split,
 #              refs: dict[str, pd.DataFrame] | None = None) -> Report
 #     refs 为 None 时 max_ref_corr / max_ref_id 为 None。refs 只在 split="train" 时传入。
-# def gate_train(report: Report, thresholds: dict) -> GateResult
+# def gate_train(report: Report, thresholds: dict,
+#                expected_direction: int | None = None) -> GateResult
+#     expected_direction 为因子 Agent 声明的预期方向（+1 / -1）。
+#     thresholds.train.direction_must_match_hypothesis 为 true 且传入方向时，
+#     增加检查 "direction"：训练集 IC 的符号必须等于预期方向。
 # def gate_valid(valid_report: Report, train_report: Report, thresholds: dict) -> GateResult
 #
 # ---- 线 C：src/refstore.py（参照因子值，PRD 第 13 节）----
@@ -205,6 +209,8 @@ class FactorProposal(TypedDict):
     explanation: str
     reason: str                      # status="cannot_build" 时必填
     change_note: str                 # 调整时必填；v0 为 ""
+    expected_direction: int          # +1：因子值越大预期收益越高；-1：越低。由假设决定，
+                                     # 调整时不得改变；cannot_build 时为 0
 
 
 class Attribution(TypedDict):
@@ -222,6 +228,7 @@ class VersionRecord(TypedDict):
     ic_mean: Optional[float]
     icir: Optional[float]
     train_gate_passed: Optional[bool]
+    expected_direction: Optional[int]  # 该版本声明的预期方向
     report_path: Optional[str]       # runs/<run_id>/reports/round_XXX_vY.json
     error: Optional[str]
 
@@ -248,7 +255,7 @@ class LibraryEntry(TypedDict):
     id: str                          # 如 "F0001"
     name: str
     expression: str
-    direction: Literal[1, -1]        # 训练集 IC 的符号
+    direction: Literal[1, -1]        # 预期方向（= 训练集 IC 的符号，训练门已保证一致）
     hypothesis: str
     logic: str
     explanation: str

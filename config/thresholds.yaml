@@ -2,6 +2,7 @@ train:
   abs_ic_mean_min: 0.01
   abs_icir_min: 0.06
   max_abs_ref_corr: 0.8    # 严格小于
+  direction_must_match_hypothesis: true   # 训练集 IC 符号必须等于因子 Agent 声明的预期方向
 valid:
   abs_ic_mean_min: 0.01
   abs_icir_min: 0.06

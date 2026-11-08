@@ -161,7 +161,7 @@ def stub_evaluate(factor, market, split, refs=None) -> dict:
     }
 
 
-def stub_gate_train(rep, thr) -> dict:
+def stub_gate_train(rep, thr, expected_direction=None) -> dict:
     t = thr["train"]
     corr = rep["max_ref_corr"]
     checks = [
@@ -173,6 +173,9 @@ def stub_gate_train(rep, thr) -> dict:
          "threshold": t["max_abs_ref_corr"],
          "passed": corr is None or abs(corr) < t["max_abs_ref_corr"]},
     ]
+    if expected_direction is not None:
+        prod = float(np.sign(rep["ic_mean"]) * np.sign(expected_direction))
+        checks.append({"name": "direction", "value": prod, "threshold": 1.0, "passed": prod > 0})
     return {"passed": all(c["passed"] for c in checks), "checks": checks}
 
 
