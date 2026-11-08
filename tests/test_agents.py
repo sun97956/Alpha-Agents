@@ -314,9 +314,31 @@ def test_history_summary_last_30_and_fields():
              "validation": None, "error": None} for i in range(1, 41)]
     out = records.history_summary(recs)
     assert len(out) == C.HISTORY_ROUNDS and out[0]["round"] == 11 and out[-1]["round"] == 40
-    assert set(out[0]) == {"run_id", "round", "hypothesis", "logic", "mechanism", "horizon", "train_conclusion",
-                           "train_ic_mean", "train_icir", "attribution", "validation"}
+    assert set(out[0]) == {"run_id", "round", "hypothesis", "mechanism", "horizon", "train_conclusion",
+                           "train_ic_mean", "train_icir", "validation"}
     assert out[0]["train_ic_mean"] == 0.01
+
+
+def test_mechanism_table_uses_numeric_reports(tmp_path):
+    report_path = tmp_path / "report.json"
+    report_path.write_text(json.dumps({
+        "report": {"horizons": {"1": {"ic_mean": 0.02}, "5": {"ic_mean": 0.04}}}
+    }), encoding="utf-8")
+    recs = [
+        {"hypothesis": {"mechanism": "反转", "horizon": 5},
+         "train_conclusion": "pass", "validation": "pass",
+         "versions": [{"ic_mean": 0.01, "report_path": str(report_path)},
+                      {"ic_mean": 0.03, "report_path": str(report_path)}]},
+        {"hypothesis": {"mechanism": "反转", "horizon": 1},
+         "train_conclusion": "fail", "validation": "fail",
+         "versions": [{"ic_mean": 0.02, "report_path": str(report_path)}]},
+    ]
+    row = records.mechanism_table(recs)[0]
+    assert set(row) == {"mechanism", "tries", "train_pass", "valid_pass", "declared",
+                        "best_horizon", "initial_ic_median", "best_ic"}
+    assert row["initial_ic_median"] == pytest.approx(0.015)
+    assert row["best_ic"] == pytest.approx(0.03)
+    assert row["best_horizon"] == "5日:2"
 
 
 def test_library_ids_and_validation(tmp_path):

@@ -2,11 +2,12 @@ data_dir: data                 # 相对项目根目录；数据放在项目里�
 cache_dir: cache
 runs_dir: runs
 n_rounds: 10
+turnover_cost: 0.001             # 五分组多空组合每单位换手的成本
 llm:
   provider: openai_compatible   # 用 openai SDK 接入任何兼容 OpenAI 接口的服务
   base_url: "https://api.deepseek.com"                  # 由人填写，如服务商给的 https://.../v1
   model: "deepseek-flash"                     # 由人填写
   temperature: 0.7
   max_tokens: 32000               # 思考型模型的思考也计入，太小会导致正文为空
-  extra_body: {"reasoning_effort": "high"}   # DeepSeek 思考强度：none/low/high/max（medium 会被当成 high）
+  extra_body: {"reasoning_effort": "low"}   # DeepSeek 思考强度：none/low/high/max（medium 会被当成 high）
   api_key_env: LLM_API_KEY      # 环境变量名，Key 本身不写进文件

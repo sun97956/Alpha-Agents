@@ -36,6 +36,7 @@ from src.contracts import (
 )
 
 DEFAULT_THRESHOLDS_PATH = "config/thresholds.yaml"
+DEFAULT_SETTINGS_PATH = Path(__file__).resolve().parents[1] / "config" / "settings.yaml"
 
 
 # =====================================================================
@@ -175,6 +176,39 @@ def _ic_stats(ic: pd.Series) -> tuple[int, float, float, float, float, float]:
     return n, mean, std, _f(icir), _f(t_stat), pos
 
 
+def _hac_stats(ic: pd.Series, horizon: int) -> tuple[float, float, float]:
+    """Newey-West t 值及 IC 均值的 95% 置信区间，滞后阶数为重叠窗口的 h-1。"""
+    values = ic.dropna().to_numpy(dtype="float64")
+    n = len(values)
+    if n == 0:
+        return float("nan"), float("nan"), float("nan")
+    mean = float(values.mean())
+    centered = values - mean
+    gamma0 = float(np.dot(centered, centered) / n)
+    lag_max = min(max(int(horizon) - 1, 0), n - 1)
+    long_run = gamma0
+    for lag in range(1, lag_max + 1):
+        gamma = float(np.dot(centered[lag:], centered[:-lag]) / n)
+        long_run += 2.0 * (1.0 - lag / (lag_max + 1.0)) * gamma
+    se = math.sqrt(max(long_run, 0.0) / n) if long_run >= 0 else float("nan")
+    if not math.isfinite(se) or se == 0:
+        t_stat = float("nan") if mean == 0 else math.copysign(float("inf"), mean)
+        return _f(t_stat), _f(mean - 1.96 * se), _f(mean + 1.96 * se)
+    return _f(mean / se), _f(mean - 1.96 * se), _f(mean + 1.96 * se)
+
+
+def _turnover_cost() -> float:
+    try:
+        with open(DEFAULT_SETTINGS_PATH, "r", encoding="utf-8") as fh:
+            value = yaml.safe_load(fh).get("turnover_cost")
+        cost = float(value)
+    except (AttributeError, TypeError, ValueError, OSError, yaml.YAMLError) as exc:
+        raise ValueError(f"settings.yaml 中 turnover_cost 无效：{exc}") from exc
+    if not math.isfinite(cost) or cost < 0:
+        raise ValueError("settings.yaml 中 turnover_cost 必须是非负有限数")
+    return cost
+
+
 def _daily_ic(f: pd.DataFrame, market: Market, uni: pd.DataFrame, h: int,
               dates: pd.DatetimeIndex) -> pd.Series:
     fwd = _align(market.fwd_ret[h], market)
@@ -183,6 +217,35 @@ def _daily_ic(f: pd.DataFrame, market: Market, uni: pd.DataFrame, h: int,
     y = np.where(mask, fwd.loc[dates].to_numpy(), np.nan)
     corr, _ = _rowwise_spearman(x, y, MIN_STOCKS_PER_DAY)
     return pd.Series(corr, index=dates, dtype="float64")
+
+
+def _group_ic(f: pd.DataFrame, market: Market, uni: pd.DataFrame,
+              dates: pd.DatetimeIndex, h: int) -> dict:
+    """按每日市值三分位和行业分别计算主期限 IC 均值。"""
+    fwd = _align(market.fwd_ret[h], market)
+    base = uni.loc[dates].to_numpy() & ~np.isnan(f.loc[dates].to_numpy()) & ~np.isnan(fwd.loc[dates].to_numpy())
+    x, y = f.loc[dates].to_numpy(), fwd.loc[dates].to_numpy()
+
+    def mean_for(group_mask: np.ndarray) -> float:
+        corr, _ = _rowwise_spearman(
+            np.where(base & group_mask, x, np.nan),
+            np.where(base & group_mask, y, np.nan), 2)
+        return _f(np.nanmean(corr)) if np.any(~np.isnan(corr)) else float("nan")
+
+    cap = _align(market.fields["mktcap"], market).loc[dates].where(uni.loc[dates])
+    cap_rank = cap.rank(axis=1, method="first", pct=True).to_numpy()
+    cap_groups = {
+        name: mean_for((cap_rank >= lo) & (cap_rank < hi))
+        for name, lo, hi in (("low", 0.0, 1 / 3), ("mid", 1 / 3, 2 / 3), ("high", 2 / 3, 1.01))
+    }
+
+    industry = market.industry
+    industry_groups: dict[str, float] = {}
+    if industry is not None:
+        values = industry.loc[dates].to_numpy(dtype="float64")
+        for code in sorted(np.unique(values[~np.isnan(values)])):
+            industry_groups[str(int(code)) if float(code).is_integer() else str(code)] = mean_for(values == code)
+    return {"mktcap_tercile": cap_groups, "industry": industry_groups}
 
 
 # =====================================================================
@@ -209,10 +272,13 @@ def evaluate(factor: pd.DataFrame, market: Market, split: Split,
     dates = pd.DatetimeIndex(dates).intersection(market.dates)
     ic = _daily_ic(f, market, uni, H, dates)
     n_days, ic_mean, ic_std, icir, t_stat, pos = _ic_stats(ic)
+    hac_t_stat, ic_ci95_low, ic_ci95_high = _hac_stats(ic, H)
 
-    # 覆盖：主口径 IC 日期上，每日股票池内有因子值的股票数的均值
-    cov = f.loc[dates].notna().sum(axis=1)
-    coverage_mean = _f(cov.mean()) if len(cov) else float("nan")
+    # 覆盖：主口径 IC 日期上，每日有效股票数占当日成分股数的比例均值
+    valid_count = f.loc[dates].notna().sum(axis=1)
+    universe_count = uni.loc[dates].sum(axis=1)
+    coverage = valid_count / universe_count.replace(0, np.nan)
+    coverage_mean = _f(coverage.mean()) if len(coverage) else float("nan")
 
     # ---- 分年表 ----
     yearly: list[YearStat] = []
@@ -236,6 +302,10 @@ def evaluate(factor: pd.DataFrame, market: Market, split: Split,
     # ---- 分组收益（只用主口径有效 IC 日）----
     quantile_ret = _quantile_returns(f, market, uni, pd.DatetimeIndex(ic_valid.index), H)
     long_short = _f(quantile_ret[-1] - quantile_ret[0])
+    long_short_turnover = _long_short_turnover(f, market, uni, pd.DatetimeIndex(ic_valid.index), H)
+    net_long_short = _f(long_short - long_short_turnover * _turnover_cost())
+    monotonicity = _monotonicity(quantile_ret)
+    group_ic = _group_ic(f, market, uni, dates, H)
 
     # ---- 换手：相邻两个交易日（都在主口径 IC 日期内）因子截面 Rank 相关的均值 ----
     turnover = _turnover_autocorr(f, market, dates)
@@ -255,12 +325,19 @@ def evaluate(factor: pd.DataFrame, market: Market, split: Split,
         ic_std=ic_std,
         icir=icir,
         t_stat=t_stat,
+        hac_t_stat=hac_t_stat,
+        ic_ci95_low=ic_ci95_low,
+        ic_ci95_high=ic_ci95_high,
         ic_pos_ratio=pos,
         yearly=yearly,
         decay=decay,
         horizons=horizons,
         quantile_ret=quantile_ret,
         long_short=long_short,
+        net_long_short=net_long_short,
+        long_short_turnover=long_short_turnover,
+        monotonicity=monotonicity,
+        group_ic=group_ic,
         turnover_autocorr=turnover,
         max_ref_corr=max_ref_corr,
         max_ref_id=max_ref_id,
@@ -292,6 +369,46 @@ def _quantile_returns(f: pd.DataFrame, market: Market, uni: pd.DataFrame,
             daily = np.where(cnt > 0, s / np.where(cnt > 0, cnt, 1), np.nan)
         out.append(_f(np.nanmean(daily)) if np.any(~np.isnan(daily)) else nan)
     return out
+
+
+def _quantile_memberships(f: pd.DataFrame, market: Market, uni: pd.DataFrame,
+                          days: pd.DatetimeIndex, h: int) -> list[set[int]]:
+    if len(days) == 0:
+        return []
+    fwd = _align(market.fwd_ret[h], market)
+    memberships: list[tuple[set[int], set[int]]] = []
+    for day in days:
+        valid = uni.loc[day] & f.loc[day].notna() & fwd.loc[day].notna()
+        ranked = f.loc[day].where(valid).rank(method="first")
+        n = int(valid.sum())
+        group = np.floor((ranked - 1) * N_QUANTILES / n) if n else ranked
+        memberships.append((
+            set(group[group == 0].index.astype(int)),
+            set(group[group == N_QUANTILES - 1].index.astype(int)),
+        ))
+    return memberships
+
+
+def _long_short_turnover(f: pd.DataFrame, market: Market, uni: pd.DataFrame,
+                         days: pd.DatetimeIndex, h: int) -> float:
+    memberships = _quantile_memberships(f, market, uni, days, h)
+    if len(memberships) < 2:
+        return float("nan")
+    # 每边组合按旧成员等权，取长端和短端单边换手的平均值。
+    changes = []
+    for previous, current in zip(memberships, memberships[1:]):
+        for old, new in zip(previous, current):
+            if old:
+                changes.append(1.0 - len(old & new) / len(old))
+    return _f(np.mean(changes)) if changes else float("nan")
+
+
+def _monotonicity(quantile_ret: list[float]) -> float:
+    values = np.asarray(quantile_ret, dtype="float64")
+    ok = np.isfinite(values)
+    if ok.sum() < 2 or np.std(values[ok]) == 0:
+        return float("nan")
+    return _f(np.corrcoef(np.arange(1, len(values) + 1)[ok], values[ok])[0, 1])
 
 
 def _turnover_autocorr(f: pd.DataFrame, market: Market, dates: pd.DatetimeIndex) -> float:

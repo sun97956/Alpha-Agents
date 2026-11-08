@@ -13,6 +13,8 @@ import re
 from pathlib import Path
 from typing import Any, Iterable, Optional, Union
 
+import numpy as np
+
 from src.contracts import HISTORY_ROUNDS, LibraryEntry, RoundRecord
 from src.agents.common import to_jsonable
 
@@ -105,8 +107,8 @@ def final_train_version(rec: dict) -> Optional[dict]:
 
 def history_summary(records: Iterable[dict], n: int = HISTORY_ROUNDS) -> list[dict]:
     """
-    假设 Agent 可见的历史摘要（PRD 12.3）：假设、训练结论、训练集 IC/ICIR、归因、验证通过/不通过。
-    不含：错误信息、公式明细、任何验证集指标。
+    假设 Agent 可见的历史摘要。只保留假设、机制、期限、训练结论、
+    最后一版训练 IC/ICIR 和验证结论。
     """
     recs = list(records)[-n:] if n > 0 else []
     out = []
@@ -120,21 +122,17 @@ def history_summary(records: Iterable[dict], n: int = HISTORY_ROUNDS) -> list[di
             "hypothesis": hyp.get("hypothesis"),
             "mechanism": hyp.get("mechanism"),
             "horizon": hyp.get("horizon"),
-            "logic": hyp.get("logic"),
             "train_conclusion": r.get("train_conclusion"),
             "train_ic_mean": v.get("ic_mean") if v else None,
             "train_icir": v.get("icir") if v else None,
-            "attribution": r.get("attribution"),
             "validation": val if val in ("pass", "fail") else None,
         })
     return out
 
 
-def mechanism_table(records: Iterable[dict], n_lessons: int = 2) -> list[dict]:
+def mechanism_table(records: Iterable[dict], runs_dir: PathLike | None = None) -> list[dict]:
     """
-    按机制类别汇总全部历史轮次（假设 Agent 可见）：尝试次数、训练达标、验证通过、
-    声明持有期分布、复盘给出的实际最强期限分布、复盘结论分布、最近的经验。
-    只用训练集结论和验证的通过/不通过，不含任何验证集指标。
+    按机制类别汇总全部历史轮次，只使用记录和训练报告中的数值。
     """
     from collections import Counter, OrderedDict
     groups: "OrderedDict[str, list[dict]]" = OrderedDict()
@@ -148,19 +146,39 @@ def mechanism_table(records: Iterable[dict], n_lessons: int = 2) -> list[dict]:
     def fmt(counter: Counter) -> str:
         return "，".join(f"{k}:{v}" for k, v in sorted(counter.items(), key=lambda kv: str(kv[0]))) or "-"
 
+    def report_for(v: dict) -> dict:
+        path = Path(str(v.get("report_path", "")))
+        if not path.exists() and runs_dir is not None:
+            path = Path(runs_dir) / path
+        try:
+            return json.loads(path.read_text(encoding="utf-8")).get("report", {})
+        except (OSError, ValueError, TypeError):
+            return {}
+
     rows = []
     for mech, rs in groups.items():
-        attrs = [r.get("attribution") or {} for r in rs]
-        lessons = [a.get("lesson") for a in attrs if a.get("lesson")]
+        initial = [v.get("ic_mean") for r in rs for v in (r.get("versions") or [])[:1]
+                   if v.get("ic_mean") is not None]
+        best_ics = [v.get("ic_mean") for r in rs for v in (r.get("versions") or [])
+                    if v.get("ic_mean") is not None]
+        horizons = []
+        for r in rs:
+            v = final_train_version(r)
+            report = report_for(v) if v else {}
+            hs = report.get("horizons") or {}
+            valid_h = [(float(data["ic_mean"]), h) for h, data in hs.items()
+                       if data.get("ic_mean") is not None]
+            if valid_h:
+                horizons.append(max(valid_h)[1] + "日")
         rows.append({
             "mechanism": mech,
             "tries": len(rs),
             "train_pass": sum(r.get("train_conclusion") == "pass" for r in rs),
             "valid_pass": sum(r.get("validation") == "pass" for r in rs),
             "declared": fmt(Counter(f"{(r.get('hypothesis') or {}).get('horizon')}日" for r in rs)),
-            "best": fmt(Counter(f"{a['best_horizon']}日" for a in attrs if a.get("best_horizon"))),
-            "conclusions": fmt(Counter(a["conclusion"] for a in attrs if a.get("conclusion"))),
-            "lessons": lessons[-n_lessons:],
+            "best_horizon": fmt(Counter(horizons)),
+            "initial_ic_median": float(np.median(initial)) if initial else None,
+            "best_ic": max(best_ics) if best_ics else None,
         })
     rows.sort(key=lambda x: -x["tries"])
     return rows

@@ -3,7 +3,7 @@ Agent 公共部分：提示词加载、上下文渲染、JSON 解析与重试。
 
 信息可见性（PRD 12.3）由这里的渲染函数把关：
   - 因子库只渲染名称、公式、方向、逻辑、训练集指标；
-  - 历史摘要只渲染假设、训练结论、训练集 IC/ICIR、归因、验证"通过/不通过"。
+  - 历史摘要只渲染假设、机制、期限、训练结论、训练集 IC/ICIR、验证"通过/不通过"。
 """
 from __future__ import annotations
 
@@ -102,12 +102,12 @@ def render_operators() -> str:
 
 
 def render_classics(classics: list[dict]) -> str:
-    lines = ["## 经典因子库（经过检验、有经济含义的有效因子，是构建新因子的思想来源和积木）",
-             "可以借鉴它们的经济机制和公式结构、在其基础上改进或组合。"]
+    lines = ["## 参考因子目录（经典因子与 WQ101，仅提供名称和机制说明）",
+             "参考库用于提供机制灵感；不要把参考因子的表现数据当作依据。"]
     if not classics:
         lines.append("（空）")
     for c in classics:
-        lines.append(f"- {c.get('id', '')} {c.get('name', '')}：`{c.get('expression', '')}` —— {c.get('logic', '')}")
+        lines.append(f"- {c.get('id', '')} {c.get('name', '')}：{c.get('logic', '')}")
     return "\n".join(lines)
 
 
@@ -124,16 +124,16 @@ def render_library(library: list[dict]) -> str:
 
 
 def render_experience(rows: list[dict]) -> str:
-    """机制经验表：程序按机制类别汇总历史轮次（只含训练集结论和验证的通过/不通过）。"""
+    """机制经验表：只渲染程序从记录和训练报告计算出的数字。"""
     lines = ["## 机制经验表（按机制类别汇总历史研究）"]
     if not rows:
         lines.append("（暂无）")
         return "\n".join(lines)
-    lines.append("| 机制 | 尝试 | 训练达标 | 验证通过 | 声明持有期分布 | 实际最强期限分布 | 复盘结论分布 | 最近的经验 |")
+    lines.append("| 机制 | 尝试 | 训练达标 | 验证通过 | 声明持有期分布 | 实际最强期限分布 | 初版 IC 中位数 | 最好 IC |")
     lines.append("|---|---|---|---|---|---|---|---|")
     for r in rows:
         lines.append(f"| {r['mechanism']} | {r['tries']} | {r['train_pass']} | {r['valid_pass']} | "
-                     f"{r['declared']} | {r['best']} | {r['conclusions']} | {' / '.join(r['lessons']) or '-'} |")
+                     f"{r['declared']} | {r['best_horizon']} | {_fmt(r['initial_ic_median'])} | {_fmt(r['best_ic'])} |")
     return "\n".join(lines)
 
 
@@ -142,15 +142,12 @@ def render_history(history: list[dict]) -> str:
     if not history:
         lines.append("（暂无）")
     for h in history:
-        attr = h.get("attribution") or {}
-        attr_s = (f"{attr.get('conclusion', '-')}，最强期限 {attr.get('best_horizon', '-')} 日，"
-                  f"问题在 {attr.get('attribution')}；经验：{attr.get('lesson', '')}") if attr else "-"
         lines.append(
             f"- [{h.get('run_id', '')} 第 {h.get('round')} 轮] [{h.get('mechanism') or '-'}，"
             f"{h.get('horizon') or '-'} 日] 假设：{h.get('hypothesis') or '-'}；"
-            f"逻辑：{h.get('logic') or '-'}；训练结论：{h.get('train_conclusion')}；"
+            f"训练结论：{h.get('train_conclusion')}；"
             f"训练集 IC {_fmt(h.get('train_ic_mean'))}、ICIR {_fmt(h.get('train_icir'))}；"
-            f"复盘：{attr_s}；验证：{h.get('validation') or '-'}")
+            f"验证：{h.get('validation') or '-'}")
     return "\n".join(lines)
 
 

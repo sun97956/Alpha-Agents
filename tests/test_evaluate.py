@@ -65,9 +65,12 @@ def rev5_train(market) -> dict:
 
 
 def make_report(ic_mean=0.03, icir=0.1, max_ref_corr=0.1, max_ref_id="C01") -> dict:
-    return dict(split="train", n_days=100, coverage_mean=150.0, ic_mean=ic_mean, ic_std=0.2,
+    return dict(split="train", n_days=100, coverage_mean=0.9, ic_mean=ic_mean, ic_std=0.2,
                 icir=icir, t_stat=1.0, ic_pos_ratio=0.55, yearly=[], decay={"1": 0.0, "5": 0.0, "20": 0.0},
-                quantile_ret=[0.0] * 5, long_short=0.0, turnover_autocorr=0.5,
+                horizons={}, hac_t_stat=1.0, ic_ci95_low=0.0, ic_ci95_high=0.1,
+                quantile_ret=[0.0] * 5, long_short=0.0, net_long_short=0.0,
+                long_short_turnover=0.0, monotonicity=0.0, group_ic={},
+                turnover_autocorr=0.5,
                 max_ref_corr=max_ref_corr, max_ref_id=max_ref_id)
 
 
@@ -243,11 +246,14 @@ def test_report_fields_and_types(market):
     assert set(rep) == expected
     assert rep["split"] == "train"
     assert type(rep["n_days"]) is int and rep["n_days"] > 0
-    for k in ["coverage_mean", "ic_mean", "ic_std", "icir", "t_stat", "ic_pos_ratio",
-              "long_short", "turnover_autocorr", "max_ref_corr"]:
+    for k in ["coverage_mean", "ic_mean", "ic_std", "icir", "t_stat", "hac_t_stat",
+              "ic_ci95_low", "ic_ci95_high", "ic_pos_ratio", "long_short",
+              "net_long_short", "long_short_turnover", "monotonicity",
+              "turnover_autocorr", "max_ref_corr"]:
         assert type(rep[k]) is float, k
         assert math.isfinite(rep[k]), k
-    assert 0 < rep["coverage_mean"] <= len(market.permnos)
+    assert isinstance(rep["group_ic"], dict)
+    assert 0 < rep["coverage_mean"] <= 1
     assert 0 <= rep["ic_pos_ratio"] <= 1
     assert isinstance(rep["yearly"], list) and len(rep["yearly"]) >= 1
     for y in rep["yearly"]:
@@ -512,7 +518,7 @@ def test_real_rev5_ic_positive():
         rep = ev.evaluate(expr.compute(e, m), m, "train")
         assert rep["ic_mean"] > 0, e
         assert rep["n_days"] > 3000
-        assert 400 <= rep["coverage_mean"] <= 520
+        assert 0.8 <= rep["coverage_mean"] <= 1.0
 
 
 def test_report_horizons(market):
@@ -522,3 +528,14 @@ def test_report_horizons(market):
         assert set(v) == {"ic_mean", "icir", "ic_pos_ratio", "n_days"}
         assert v["ic_mean"] == rep["decay"][h]
     assert rep["horizons"]["5"]["icir"] == rep["icir"]
+
+
+def test_diagnostic_metrics(market):
+    rep = ev.evaluate(stub_rev5(market), market, "train")
+    assert 0 < rep["coverage_mean"] <= 1
+    assert set(rep["group_ic"]) == {"mktcap_tercile", "industry"}
+    assert set(rep["group_ic"]["mktcap_tercile"]) == {"low", "mid", "high"}
+    assert math.isfinite(rep["hac_t_stat"])
+    assert rep["ic_ci95_low"] < rep["ic_ci95_high"]
+    assert -1 <= rep["monotonicity"] <= 1
+    assert rep["net_long_short"] <= rep["long_short"]

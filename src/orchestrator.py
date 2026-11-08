@@ -131,7 +131,7 @@ class Orchestrator:
         return AgentContext(classics=self.classics,
                             library=records.read_library(self.library_path),
                             history=hist,
-                            experience=records.mechanism_table(all_recs))
+                            experience=records.mechanism_table(all_recs, self.runs_dir))
 
     # ---- 一轮 ----
     def run_round(self, round_no: int) -> dict:

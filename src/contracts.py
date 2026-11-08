@@ -180,18 +180,25 @@ class Report(TypedDict):
     """回测明细（PRD 第 9 节）。只有 split="train" 的明细会给到因子 Agent。"""
     split: str
     n_days: int                      # 有效 IC 天数
-    coverage_mean: float             # 平均每日有因子值的股票数
+    coverage_mean: float             # 平均每日有效股票数 / 当日成分股数
     horizon: int                     # 本明细的主口径持有期（= 假设声明的持有期）
     ic_mean: float                   # 日 Rank IC 均值（h=horizon）
     ic_std: float
     icir: float                      # ic_mean / ic_std，日频不年化
-    t_stat: float                    # ic_mean / ic_std * sqrt(n_days)
+    t_stat: float                    # 未修正的日频 t 值（保留用于兼容）
+    hac_t_stat: float                # Newey-West 修正的 t 值
+    ic_ci95_low: float               # IC 均值的 HAC 95% 置信区间下界
+    ic_ci95_high: float              # IC 均值的 HAC 95% 置信区间上界
     ic_pos_ratio: float
     yearly: list[YearStat]
     decay: dict[str, float]          # {"1": .., "5": .., ...}：各期限 IC 均值，各 h 用各自的 split_dates
     horizons: dict[str, dict]        # {"1": {ic_mean, icir, ic_pos_ratio, n_days}, ...}：各期限完整表现
     quantile_ret: list[float]        # N_QUANTILES 个，第 1 个 = 因子值最低组，平均 fwd_ret_5
     long_short: float                # 最高组 - 最低组
+    net_long_short: float             # 五分组多空毛收益减去换手成本
+    long_short_turnover: float       # 五分组多空组合平均成员换手
+    monotonicity: float               # 五分组收益与组序的相关系数
+    group_ic: dict                   # 市值三分位和行业分组的 IC 均值
     turnover_autocorr: float         # 相邻两日因子截面 Rank 相关的均值
     max_ref_corr: Optional[float]    # 与参照因子日截面 Spearman 相关均值，取绝对值最大者（保留符号）
     max_ref_id: Optional[str]
