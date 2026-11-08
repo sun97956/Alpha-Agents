@@ -4,4 +4,4 @@ pyarrow
 pyyaml
 scipy
 pytest
-anthropic
+openai

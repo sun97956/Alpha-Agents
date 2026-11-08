@@ -9,7 +9,7 @@ S&P 500 单因子挖掘流水线：假设 Agent 提假设 → 因子 Agent 写�
 ## 环境与命令
 
 - Python 3.11，运行在 Windows（路径一律用 `pathlib`，不要写死 `\`）
-- 依赖：`pandas numpy pyarrow pyyaml scipy pytest anthropic`（记在 `requirements.txt`）
+- 依赖：`pandas numpy pyarrow pyyaml scipy pytest openai`（记在 `requirements.txt`）
 - 安装：`python -m pip install -r requirements.txt`
 - 全部单元测试：`python -m pytest -q`
 - 单个模块：`python -m pytest tests/test_data.py -q`
@@ -62,7 +62,7 @@ S&P 500 单因子挖掘流水线：假设 Agent 提假设 → 因子 Agent 写�
 - **A**：fake 数据上 `split_dates` 不跨段、标签对齐正确；真实数据（`-m real`）上行数 5,260,971、股票数 1,195、日期 2000-01-03 至截止日、每日股票池约 500、185 只换过行业的股票在不同时期取到不同行业；第二次加载走缓存。
 - **B**：`validate` 拒绝非白名单字段/算子/窗口、非法语法、`ts_delay`/`ts_delta` 以外用窗口 1，错误信息为中文；每个算子有单测（含 NaN、窗口不完整、截面只在股票池内）；`classic_factors.yaml` 20 条全部通过 `validate`，内容与 PRD 第 13 节一致。
 - **C**：在 fake 数据上 `-ts_sum(ret,5)` 的 `ic_mean > 0`；`Report` 每个字段都有值且类型正确；两道门的每项检查有单测（含负向因子、符号相反、相关性超限）；`save_ref` → `load_refs` 往返一致。
-- **D**：Agent 输出的 JSON 解析失败会重试 1 次，再失败抛错；公式校验失败最多重写 `MAX_EXPR_RETRY` 次；`MockLLM` 下 `test_smoke.py` 跑 3 轮通过；人为注入异常时该轮记为 `skipped`，下一轮继续；每次 LLM 调用的 prompt 和回复写进 `runs/<run_id>/llm_log.jsonl`。
+- **D**：`src/agents/llm.py` 实现 `OpenAICompatibleLLM`（openai SDK，读 settings 的 base_url / model / api_key_env）和 `MockLLM`，都满足 `contracts.LLM`；不依赖任何服务商特有的功能（如 JSON mode、工具调用），JSON 由提示词约定并自行解析；Agent 输出的 JSON 解析失败会重试 1 次，再失败抛错；公式校验失败最多重写 `MAX_EXPR_RETRY` 次；`MockLLM` 下 `test_smoke.py` 跑 3 轮通过；人为注入异常时该轮记为 `skipped`，下一轮继续；每次 LLM 调用的 prompt 和回复写进 `runs/<run_id>/llm_log.jsonl`。
 
 ## git 规则
 
@@ -96,11 +96,12 @@ S&P 500 单因子挖掘流水线：假设 Agent 提假设 → 因子 Agent 写�
    runs_dir: runs
    n_rounds: 10
    llm:
-     provider: anthropic     # 换模型：在 src/agents/llm.py 新增实现 contracts.LLM 的类
-     model: ""               # 由人填写
+     provider: openai_compatible   # 用 openai SDK 接入任何兼容 OpenAI 接口的服务
+     base_url: ""                  # 由人填写，如服务商给的 https://.../v1
+     model: ""                     # 由人填写
      temperature: 0.7
      max_tokens: 2000
-     api_key_env: ANTHROPIC_API_KEY
+     api_key_env: LLM_API_KEY      # 环境变量名，Key 本身不写进文件
    ```
 
    方法论常量（字段、算子、窗口、收益期限、切分日期、调整次数）在 `contracts.py`，不放 settings。
