@@ -219,12 +219,15 @@ def evaluate(factor: pd.DataFrame, market: Market, split: Split,
 
     # ---- IC 衰减：各 h 用各自的 split_dates ----
     decay: dict[str, float] = {}
+    horizons: dict[str, dict] = {}
     for h in HORIZONS:
         if h == MAIN_HORIZON:
-            decay[str(h)] = ic_mean
-            continue
-        d_h = pd.DatetimeIndex(_split_dates(market, split, h)).intersection(market.dates)
-        decay[str(h)] = _ic_stats(_daily_ic(f, market, uni, h, d_h))[1]
+            hn, hm, hir, hpos = n_days, ic_mean, icir, pos
+        else:
+            d_h = pd.DatetimeIndex(_split_dates(market, split, h)).intersection(market.dates)
+            hn, hm, _, hir, _, hpos = _ic_stats(_daily_ic(f, market, uni, h, d_h))
+        decay[str(h)] = hm
+        horizons[str(h)] = {"ic_mean": hm, "icir": hir, "ic_pos_ratio": hpos, "n_days": hn}
 
     # ---- 分组收益（只用主口径有效 IC 日）----
     quantile_ret = _quantile_returns(f, market, uni, pd.DatetimeIndex(ic_valid.index))
@@ -250,6 +253,7 @@ def evaluate(factor: pd.DataFrame, market: Market, split: Split,
         ic_pos_ratio=pos,
         yearly=yearly,
         decay=decay,
+        horizons=horizons,
         quantile_ret=quantile_ret,
         long_short=long_short,
         turnover_autocorr=turnover,
@@ -350,8 +354,8 @@ def gate_train(report: Report, thresholds: dict) -> GateResult:
     ref = report.get("max_ref_corr")
     lim = _f(t["max_abs_ref_corr"])
     if ref is None:
-        # 没有参照集就无法证明不重复：按最保守的理解判为不通过（见 issues/C.md）
-        checks.append(_check("max_ref_corr", float("nan"), lim, False))
+        # 没有参照因子（例如因子库还是空的）：无可重复，视为通过
+        checks.append(_check("max_ref_corr", float("nan"), lim, True))
     else:
         r = abs(_f(ref))
         checks.append(_check("max_ref_corr", r, lim, (not math.isnan(r)) and r < lim))

@@ -44,7 +44,7 @@ WINDOWS: tuple[int, ...] = (2, 3, 5, 10, 20, 60, 120, 250)
 DELAY_WINDOWS: tuple[int, ...] = (1,) + WINDOWS            # 仅 ts_delay / ts_delta 可用 1
 
 MAIN_HORIZON: int = 5                                      # 门槛只看 h=5
-HORIZONS: tuple[int, ...] = (1, 5, 20)                     # 明细里的 IC 衰减
+HORIZONS: tuple[int, ...] = (1, 5, 10, 20, 60)             # 明细里各期限的 IC 表现
 MIN_STOCKS_PER_DAY: int = 100                              # 当日有效股票少于此数则跳过该日
 N_QUANTILES: int = 5
 
@@ -183,7 +183,8 @@ class Report(TypedDict):
     t_stat: float                    # ic_mean / ic_std * sqrt(n_days)
     ic_pos_ratio: float
     yearly: list[YearStat]
-    decay: dict[str, float]          # {"1": .., "5": .., "20": ..}，各 h 用各自的 split_dates
+    decay: dict[str, float]          # {"1": .., "5": .., ...}：各期限 IC 均值，各 h 用各自的 split_dates
+    horizons: dict[str, dict]        # {"1": {ic_mean, icir, ic_pos_ratio, n_days}, ...}：各期限完整表现
     quantile_ret: list[float]        # N_QUANTILES 个，第 1 个 = 因子值最低组，平均 fwd_ret_5
     long_short: float                # 最高组 - 最低组
     turnover_autocorr: float         # 相邻两日因子截面 Rank 相关的均值

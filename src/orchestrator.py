@@ -37,6 +37,10 @@ def load_settings(path: PathLike = PROJECT_ROOT / "config" / "settings.yaml") ->
         return yaml.safe_load(f) or {}
 
 
+def _library_refs(refs: dict) -> dict:
+    return {k: v for k, v in refs.items() if str(k).startswith("F")}
+
+
 def load_classics(path: PathLike = PROJECT_ROOT / "library" / "classic_factors.yaml") -> list[dict]:
     """读 library/classic_factors.yaml（线 B 维护）。兼容顶层是列表或 {factors: [...]}。"""
     with open(path, "r", encoding="utf-8") as f:
@@ -110,7 +114,8 @@ class Orchestrator:
         self.thresholds = thresholds
         self.thresholds_sha256 = thresholds_sha256
         self.classics = list(classics)
-        self.refs = dict(refs or {})
+        # 去重只和已入库因子（ID 以 F 开头）比，不和参考因子比，参考因子是给 Agent 当积木用的
+        self.refs = _library_refs(refs or {})
         self.runs_dir = Path(runs_dir)
         self.library_path = Path(library_path)
         self.cache_dir = cache_dir
@@ -169,7 +174,8 @@ class Orchestrator:
         factor = train_report = None
         while True:
             factor = eng.compute(prop["expression"], mkt)
-            refs = self.refs if "max_abs_ref_corr" in self.thresholds.get("train", {}) else None
+            use = "max_abs_ref_corr" in self.thresholds.get("train", {}) and self.refs
+            refs = self.refs if use else None
             train_report = eng.evaluate(factor, mkt, "train", refs)
             gate = eng.gate_train(train_report, self.thresholds)
             path = self.recorder.save_report(rec["round"], version, train_report, gate)
@@ -235,7 +241,7 @@ class Orchestrator:
         records.append_library(self.library_path, entry)
         rec["library_id"] = lib_id
         try:
-            self.refs.update(eng.load_refs(self.cache_dir))
+            self.refs.update(_library_refs(eng.load_refs(self.cache_dir)))
         except Exception:  # noqa: BLE001 —— 重新加载失败不影响本轮结论，下次运行会读到
             pass
 

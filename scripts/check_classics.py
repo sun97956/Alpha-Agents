@@ -43,8 +43,9 @@ def main(argv=None) -> int:
                          "ic_mean": rep["ic_mean"], "icir": rep["icir"], "t_stat": rep["t_stat"],
                          "ic_pos_ratio": rep["ic_pos_ratio"], "n_days": rep["n_days"],
                          "coverage_mean": rep["coverage_mean"],
-                         "ic_h1": rep["decay"].get("1"), "ic_h5": rep["decay"].get("5"),
-                         "ic_h20": rep["decay"].get("20"), "long_short": rep["long_short"],
+                         **{f"ic_h{h}": v["ic_mean"] for h, v in rep["horizons"].items()},
+                         **{f"icir_h{h}": v["icir"] for h, v in rep["horizons"].items()},
+                         "long_short": rep["long_short"],
                          "turnover_autocorr": rep["turnover_autocorr"], "error": ""})
         except Exception as e:  # noqa: BLE001
             rows.append({"id": c["id"], "name": c["name"], "expression": c["expression"],

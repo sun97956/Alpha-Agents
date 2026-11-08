@@ -43,9 +43,6 @@ def main(argv=None) -> int:
     market = load_market(settings["data_dir"], end=RUN_DATA_END, cache_dir=cache_dir)
     engine = default_engine()
     refs = engine.load_refs(cache_dir)
-    if not refs:
-        print("警告：cache/ref_values/ 下没有参照因子，去重门槛形同虚设。请先运行 scripts/build_refs.py。",
-              file=sys.stderr)
     llm = MockLLM() if args.mock else OpenAICompatibleLLM.from_settings(settings)
     run_id = args.run_id
     library_path = ROOT / "factor_library.jsonl"

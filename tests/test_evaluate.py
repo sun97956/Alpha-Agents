@@ -82,7 +82,7 @@ def checks_by_name(res) -> dict:
 def test_load_thresholds(thresholds):
     assert thresholds["train"]["ic_mean_min"] == 0.01
     assert thresholds["train"]["icir_min"] == 0.06
-    assert "max_abs_ref_corr" not in thresholds["train"]       # 暂不做相关性门槛
+    assert thresholds["train"]["max_abs_ref_corr"] == 0.8      # 只和已入库因子比
     assert thresholds["valid"] == {"ic_mean_min": 0.01, "icir_min": 0.06}
 
 
@@ -367,10 +367,11 @@ def test_gate_train_ref_corr_strict(thr_corr, rc, ok):
     assert res["passed"] is ok
 
 
-def test_gate_train_missing_ref_fails(thr_corr):
+def test_gate_train_missing_ref_passes(thr_corr):
+    # 没有参照因子（因子库为空）时无可重复，去重检查视为通过
     res = ev.gate_train(make_report(max_ref_corr=None, max_ref_id=None), thr_corr)
-    assert res["passed"] is False
-    assert checks_by_name(res)["max_ref_corr"]["passed"] is False
+    assert res["passed"] is True
+    assert checks_by_name(res)["max_ref_corr"]["passed"] is True
 
 
 def test_gate_train_nan_fails(thresholds):
@@ -512,3 +513,12 @@ def test_real_rev5_ic_positive():
         assert rep["ic_mean"] > 0, e
         assert rep["n_days"] > 3000
         assert 400 <= rep["coverage_mean"] <= 520
+
+
+def test_report_horizons(market):
+    rep = ev.evaluate(stub_rev5(market), market, "train")
+    assert set(rep["horizons"]) == {str(h) for h in HORIZONS}
+    for h, v in rep["horizons"].items():
+        assert set(v) == {"ic_mean", "icir", "ic_pos_ratio", "n_days"}
+        assert v["ic_mean"] == rep["decay"][h]
+    assert rep["horizons"]["5"]["icir"] == rep["icir"]
