@@ -68,9 +68,19 @@ def main(argv=None) -> int:
     print(f"run_id = {orch.run_id}，共 {n_rounds} 轮，数据截止 {market.end.date()}")
     for i in range(1, n_rounds + 1):
         rec = orch.run_round(i)
-        extra = rec["library_id"] or rec["error"] or rec["cannot_build_reason"] or ""
-        print(f"第 {i} 轮：训练={rec['train_conclusion']} 验证={rec['validation'] or '-'} "
-              f"版本数={len(rec['versions'])} {extra}")
+        hyp = rec.get("hypothesis") or {}
+        rev = rec.get("attribution") or {}
+        best = max((v["ic_mean"] for v in rec["versions"] if v.get("ic_mean") is not None), default=None)
+        parts = [f"第 {i} 轮：[{hyp.get('mechanism', '-')}，{hyp.get('horizon', '-')}日]",
+                 f"训练={rec['train_conclusion']}", f"验证={rec['validation'] or '-'}",
+                 f"版本数={len(rec['versions'])}",
+                 f"最好IC={best:.4f}" if best is not None else "最好IC=-",
+                 f"复盘={rev.get('conclusion', '-')}（最强{rev.get('best_horizon', '-')}日）"]
+        if rec["library_id"]:
+            parts.append(f"入库={rec['library_id']}")
+        if rec["error"]:
+            parts.append(f"错误={rec['error'][:80]}")
+        print(" ".join(parts))
     print(f"运行记录：{orch.recorder.run_log}")
     return 0
 
