@@ -52,7 +52,7 @@ SP500TR_FILE = "SP500_TR_upTo20260930.csv"
 
 PRICE_FIELDS: tuple[str, ...] = tuple(f for f in FIELDS if f != "ret")  # panel 里直接有的字段
 
-CACHE_VERSION = "A1"   # 改了生成逻辑就改这里，旧缓存自动失效
+CACHE_VERSION = "A2"   # 改了生成逻辑就改这里，旧缓存自动失效
 
 # 当前 pandas 版本的默认日期精度（pandas 2.x 为 ns，3.x 为 us），与 make_fake_market 保持一致
 _DT_DTYPE = pd.bdate_range("2000-01-03", periods=1).dtype
@@ -181,6 +181,8 @@ def _read_security(path: Path) -> pd.DataFrame:
     out = pd.DataFrame({
         "permno": _to_permno(raw[pc]),
         "gsector": pd.to_numeric(raw[gc], errors="coerce").astype("float64"),
+        "gind": pd.to_numeric(raw["gind"], errors="coerce").astype("float64") if "gind" in raw else np.nan,
+        "gsubind": pd.to_numeric(raw["gsubind"], errors="coerce").astype("float64") if "gsubind" in raw else np.nan,
         "indfrom": _parse_dates(raw[fc]),
         "indthru": _parse_dates(raw[tc]),        # 空 = 至今
     })
@@ -210,7 +212,8 @@ def _build_universe(member: pd.DataFrame, dates: pd.DatetimeIndex, permnos: pd.I
     return uni & has_close.to_numpy()
 
 
-def _build_sector(sec: pd.DataFrame, dates: pd.DatetimeIndex, permnos: pd.Index) -> pd.DataFrame:
+def _build_sector(sec: pd.DataFrame, dates: pd.DatetimeIndex, permnos: pd.Index,
+                  col_name: str = "gsector") -> pd.DataFrame:
     """
     PRD 6.2 按时点取 gsector：
       - t 落在 [indfrom, indthru]（indthru 空=至今）的行中取 indfrom 最晚的一行；
@@ -232,13 +235,13 @@ def _build_sector(sec: pd.DataFrame, dates: pd.DatetimeIndex, permnos: pd.Index)
             i0 = np.searchsorted(dv, np.datetime64(row.indfrom), side="left")
             i1 = len(dv) if pd.isna(row.indthru) else np.searchsorted(dv, np.datetime64(row.indthru), side="right")
             if i1 > i0:
-                col[i0:i1] = row.gsector
+                col[i0:i1] = getattr(row, col_name)
                 covered[i0:i1] = True
         # 早于最早 indfrom：用最早一行
         first_from = g["indfrom"].iloc[0]
         earliest = g[g["indfrom"] == first_from].iloc[-1]
         k = np.searchsorted(dv, np.datetime64(first_from), side="left")
-        col[:k] = earliest["gsector"]
+        col[:k] = earliest[col_name]
         arr[:, j] = col
     return pd.DataFrame(arr, index=dates, columns=permnos)
 
@@ -262,9 +265,13 @@ def _build_market(data_dir: Path, end: Optional[pd.Timestamp]) -> Market:
 
     member = _read_membership(data_dir / MEMBERSHIP_FILE)
     universe = _build_universe(member, dates, permnos, fields["close"].notna())
-    sector = _build_sector(_read_security(data_dir / SECURITY_FILE), dates, permnos)
+    sec = _read_security(data_dir / SECURITY_FILE)
+    sector = _build_sector(sec, dates, permnos, "gsector")
+    industry = _build_sector(sec, dates, permnos, "gind")
+    subindustry = _build_sector(sec, dates, permnos, "gsubind")
     fwd_ret = {h: compute_fwd_ret(fields["close"], h) for h in HORIZONS}
-    return Market(fields=fields, universe=universe, sector=sector, fwd_ret=fwd_ret, end=dates[-1])
+    return Market(fields=fields, universe=universe, sector=sector, fwd_ret=fwd_ret, end=dates[-1],
+                  industry=industry, subindustry=subindustry)
 
 
 # =====================================================================
@@ -286,6 +293,10 @@ def _frames_to_save(m: Market) -> dict[str, pd.DataFrame]:
     out = {f"field_{k}": v for k, v in m.fields.items()}
     out["universe"] = m.universe
     out["sector"] = m.sector
+    if m.industry is not None:
+        out["industry"] = m.industry
+    if m.subindustry is not None:
+        out["subindustry"] = m.subindustry
     return out                                  # fwd_ret 不存，读缓存时用 compute_fwd_ret 重算
 
 
@@ -323,9 +334,11 @@ def _read_cache(target: Path) -> Market:
     fields = {f: rd(f"field_{f}").astype("float64") for f in FIELDS}
     universe = rd("universe").astype(bool)
     sector = rd("sector").astype("float64")
+    industry = rd("industry").astype("float64") if (target / "industry.parquet").exists() else None
+    subindustry = rd("subindustry").astype("float64") if (target / "subindustry.parquet").exists() else None
     fwd_ret = {h: compute_fwd_ret(fields["close"], h) for h in HORIZONS}
     return Market(fields=fields, universe=universe, sector=sector, fwd_ret=fwd_ret,
-                  end=pd.Timestamp(meta["end"]))
+                  end=pd.Timestamp(meta["end"]), industry=industry, subindustry=subindustry)
 
 
 # =====================================================================

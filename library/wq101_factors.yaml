@@ -1,0 +1,189 @@
+# WorldQuant 101 参考因子（筛选后 36 个），只读。
+# 来源：Kakushadze, "101 Formulaic Alphas", arXiv:1601.00991v3, Appendix A。原公式见 docs/WQ101_筛选清单.md。
+# 转写规则：
+#   - 字段：returns -> ret；adv20 用作成交量比较时写成 ts_mean(volume, 20)，单独出现时写成 ts_mean(close * volume, 20)
+#   - 算子：rank -> cs_rank，correlation -> ts_corr，covariance -> ts_cov，Ts_Rank -> ts_rank，
+#           delta -> ts_delta，delay -> ts_delay，sum -> ts_sum，stddev -> ts_std，a ? b : c -> where(a, b, c)，
+#           SignedPower / x^a -> power(x, a)，IndClass.subindustry -> subindustry；scale 不改变截面排序，省略
+#   - 窗口就近映射到允许的档位 {1, 2, 3, 5, 10, 20, 60, 120, 250}，与原文不同处在 logic 里注明
+# logic 里除 #101 外的解读均为推测，非论文原文。
+
+- id: W002
+  name: 量增与日内涨幅同步
+  expression: -ts_corr(cs_rank(ts_delta(log(volume), 2)), cs_rank((close - open) / open), 5)
+  logic: 【WQ101 #2，解读为推测；窗口 6→5】成交量增长与日内涨幅同步（放量上涨、缩量下跌）多是短期情绪推动，随后回吐；量价背离的股票更稳
+
+- id: W003
+  name: 价量正相关反转
+  expression: -ts_corr(cs_rank(open), cs_rank(volume), 10)
+  logic: 【WQ101 #3，解读为推测】价格越高越放量，说明追涨资金集中，短期透支后反转
+
+- id: W004
+  name: 低点高位反转
+  expression: -ts_rank(cs_rank(low), 10)
+  logic: 【WQ101 #4，解读为推测；窗口 9→10】最低价处于近期高位，说明短期涨多了，随后回调
+
+- id: W006
+  name: 开盘价与成交量相关
+  expression: -ts_corr(open, volume, 10)
+  logic: 【WQ101 #6，解读为推测】同 W003，不做截面排序的版本
+
+- id: W007
+  name: 放量时的大幅变动反转
+  expression: where(ts_mean(volume, 20) < volume, -ts_rank(abs(ts_delta(close, 5)), 60) * sign(ts_delta(close, 5)), -1)
+  logic: 【WQ101 #7，解读为推测；窗口 7→5；adv20 按成交量均值】放量时，近期的大幅涨跌会反转；缩量时信号弱，给最低分
+
+- id: W008
+  name: 动量加速反转
+  expression: -cs_rank(ts_sum(open, 5) * ts_sum(ret, 5) - ts_delay(ts_sum(open, 5) * ts_sum(ret, 5), 10))
+  logic: 【WQ101 #8，解读为推测】近 5 日涨幅相对 10 天前明显加速的股票随后回调
+
+- id: W009
+  name: 趋势一致顺势、震荡反转
+  expression: where(ts_min(ts_delta(close, 1), 5) > 0, ts_delta(close, 1), where(ts_max(ts_delta(close, 1), 5) < 0, ts_delta(close, 1), -ts_delta(close, 1)))
+  logic: 【WQ101 #9，解读为推测】连续 5 天同向说明趋势明确，顺着今天的方向；方向来回切换说明是噪音，反着做
+
+- id: W012
+  name: 量能确认的反转
+  expression: sign(ts_delta(volume, 1)) * (-ts_delta(close, 1))
+  logic: 【WQ101 #12，解读为推测】放量的价格变动是过度反应，次日反转；缩量的价格变动更可信，顺势
+
+- id: W014
+  name: 收益加速且量价同涨
+  expression: -cs_rank(ts_delta(ret, 3)) * ts_corr(open, volume, 10)
+  logic: 【WQ101 #14，解读为推测】收益在加速、且量价同涨的股票，短期透支后回落
+
+- id: W017
+  name: 高位加速放量过热
+  expression: -cs_rank(ts_rank(close, 10)) * cs_rank(ts_delta(ts_delta(close, 1), 1)) * cs_rank(ts_rank(volume / ts_mean(volume, 20), 5))
+  logic: 【WQ101 #17，解读为推测；adv20 按成交量均值】价格在近期高位、涨势加速、又相对放量，三者叠加说明过热，随后回调
+
+- id: W018
+  name: 日内波动与日内涨幅反转
+  expression: -cs_rank(ts_std(abs(close - open), 5) + (close - open) + ts_corr(close, open, 10))
+  logic: 【WQ101 #18，解读为推测】日内波动大、当天日内上涨的股票，短期情绪化定价，随后回吐
+
+- id: W019
+  name: 长期强势股的短期反转
+  expression: -sign(ts_delta(close, 5)) * (1 + cs_rank(1 + ts_sum(ret, 250)))
+  logic: 【WQ101 #19，解读为推测；窗口 7→5】短期反转；过去一年越强势的股票，短期回调后越容易被买回，权重越大
+
+- id: W020
+  name: 跳空回补
+  expression: -cs_rank(open - ts_delay(high, 1)) * cs_rank(open - ts_delay(close, 1)) * cs_rank(open - ts_delay(low, 1))
+  logic: 【WQ101 #20，解读为推测】开盘相对前一天的高、收、低价大幅跳空，多是隔夜情绪推动，随后回补缺口
+
+- id: W021
+  name: 布林带超买超卖
+  expression: where(ts_mean(close, 10) + ts_std(close, 10) < ts_mean(close, 2), -1, where(ts_mean(close, 2) < ts_mean(close, 10) - ts_std(close, 10), 1, where(volume >= ts_mean(volume, 20), 1, -1)))
+  logic: 【WQ101 #21，解读为推测；窗口 8→10；adv20 按成交量均值】短期均价突破上轨（超买）看空，跌破下轨（超卖）看多；区间内放量看多、缩量看空
+
+- id: W022
+  name: 量价相关性上升且高波动
+  expression: -(ts_delta(ts_corr(high, volume, 5), 5) * cs_rank(ts_std(close, 20)))
+  logic: 【WQ101 #22，解读为推测】追涨放量在增强，且股价波动大，过热信号更可靠，随后回落
+
+- id: W023
+  name: 假突破回落
+  expression: where(ts_mean(high, 20) < high, -ts_delta(high, 2), 0)
+  logic: 【WQ101 #23，解读为推测】最高价突破 20 日均值后，近两天冲得越高越容易回落
+
+- id: W024
+  name: 平缓趋势下的区间回归
+  expression: where(ts_delta(ts_mean(close, 120), 120) / ts_delay(close, 120) <= 0.05, -(close - ts_min(close, 120)), -ts_delta(close, 3))
+  logic: 【WQ101 #24，解读为推测；窗口 100→120】长期趋势平缓时，离区间低点越远越该回调；长期趋势明显时，只做 3 日反转
+
+- id: W026
+  name: 量价同步创新高反转
+  expression: -ts_max(ts_corr(ts_rank(volume, 5), ts_rank(high, 5), 5), 3)
+  logic: 【WQ101 #26，解读为推测】成交量和最高价同步创近期新高，是追涨的典型特征，随后反转
+
+- id: W028
+  name: 尾盘偏弱反弹
+  expression: ts_corr(ts_mean(close * volume, 20), low, 5) + (high + low) / 2 - close
+  logic: 【WQ101 #28，解读为推测；省略 scale】收盘价低于当日高低价中点（尾盘偏弱）的股票次日反弹
+
+- id: W030
+  name: 连涨反转（放量加强）
+  expression: (1 - cs_rank(sign(close - ts_delay(close, 1)) + sign(ts_delay(close, 1) - ts_delay(close, 2)) + sign(ts_delay(close, 2) - ts_delay(close, 3)))) * ts_sum(volume, 5) / ts_sum(volume, 20)
+  logic: 【WQ101 #30，解读为推测】连涨天数越多越该回调；近期相对放量时，这个反转效应更强
+
+- id: W033
+  name: 日内反转
+  expression: cs_rank(open / close - 1)
+  logic: 【WQ101 #33，解读为推测】当天日内下跌（收盘低于开盘）的股票随后反弹
+
+- id: W034
+  name: 波动收缩后反弹
+  expression: cs_rank((1 - cs_rank(ts_std(ret, 2) / ts_std(ret, 5))) + (1 - cs_rank(ts_delta(close, 1))))
+  logic: 【WQ101 #34，解读为推测】短期波动在收缩、且昨天下跌的股票，恐慌平复后反弹
+
+- id: W035
+  name: 低位放量承接
+  expression: ts_rank(volume, 20) * (1 - ts_rank(close + high - low, 20)) * (1 - ts_rank(ret, 20))
+  logic: 【WQ101 #35，解读为推测；窗口 32→20、16→20】相对放量、价格却处于近期低位、收益也低，说明有资金在低位承接，随后反弹
+
+- id: W037
+  name: 日内下跌反弹（长期关系）
+  expression: cs_rank(ts_corr(ts_delay(open - close, 1), close, 250)) + cs_rank(open - close)
+  logic: 【WQ101 #37，解读为推测；窗口 200→250】日内下跌的股票随后反弹，叠加日内走势与价格的长期关系
+
+- id: W038
+  name: 高位日内上涨反转
+  expression: -cs_rank(ts_rank(close, 10)) * cs_rank(close / open)
+  logic: 【WQ101 #38，解读为推测】价格在近期高位、当天又日内上涨，短期过热，随后回调
+
+- id: W039
+  name: 缩量变动反转
+  expression: -cs_rank(ts_delta(close, 5) * (1 - cs_rank(decay_linear(volume / ts_mean(volume, 20), 10)))) * (1 + cs_rank(ts_sum(ret, 250)))
+  logic: 【WQ101 #39，解读为推测；窗口 7→5、9→10；adv20 按成交量均值】缩量下的涨跌缺少资金支持，更容易反转；过去一年强势的股票权重更大
+
+- id: W040
+  name: 高波动量价同涨
+  expression: -cs_rank(ts_std(high, 10)) * ts_corr(high, volume, 10)
+  logic: 【WQ101 #40，解读为推测】波动大且量价同涨，说明投机性追涨，随后回落
+
+- id: W043
+  name: 放量下跌反弹
+  expression: ts_rank(volume / ts_mean(volume, 20), 20) * ts_rank(-ts_delta(close, 5), 10)
+  logic: 【WQ101 #43，解读为推测；窗口 7→5、8→10；adv20 按成交量均值】近期下跌的同时相对放量，说明是恐慌性抛售或流动性冲击，随后反弹
+
+- id: W048
+  name: 收益惯性体质
+  expression: group_neutralize(ts_corr(ts_delta(close, 1), ts_delay(ts_delta(close, 1), 1), 250) * ts_delta(close, 1) / close, subindustry) / ts_sum(power(ts_delta(close, 1) / ts_delay(close, 1), 2), 250)
+  logic: 【WQ101 #48，解读为推测】日收益过去一年有惯性的股票顺着今天的方向，有反转倾向的股票反着做；按子行业中性、按波动缩放
+
+- id: W049
+  name: 超跌反弹否则日反转
+  expression: where((ts_delay(close, 20) - ts_delay(close, 10)) / 10 - (ts_delay(close, 10) - close) / 10 < -0.1, 1, -ts_delta(close, 1))
+  logic: 【WQ101 #49，解读为推测】过去 20 天跌幅较大时看多（超跌反弹），否则做 1 日反转；阈值是价格差（美元），对高价股不公平
+
+- id: W052
+  name: 强势股回调买点
+  expression: (-ts_min(low, 5) + ts_delay(ts_min(low, 5), 5)) * cs_rank((ts_sum(ret, 250) - ts_sum(ret, 20)) / 230) * ts_rank(volume, 5)
+  logic: 【WQ101 #52，解读为推测；窗口 240→250】中长期强势的股票短期回调、创出新低且相对放量，是买入时机
+
+- id: W053
+  name: 收盘位置上移反转
+  expression: -ts_delta(((close - low) - (high - close)) / (close - low), 10)
+  logic: 【WQ101 #53，解读为推测；窗口 9→10】收盘在日内区间中的位置比前些天明显上移（尾盘被推高），随后回落
+
+- id: W054
+  name: 日内弱势收盘反弹
+  expression: -((low - close) * power(open, 5)) / ((low - high) * power(close, 5))
+  logic: 【WQ101 #54，解读为推测】日内下跌、收盘靠近当日低点的股票次日反弹
+
+- id: W055
+  name: 区间高位放量反转
+  expression: -ts_corr(cs_rank((close - ts_min(low, 10)) / (ts_max(high, 10) - ts_min(low, 10))), cs_rank(volume), 5)
+  logic: 【WQ101 #55，解读为推测；窗口 12→10、6→5】价格在近期区间高位时放量（追涨），随后反转
+
+- id: W060
+  name: 尾盘放量推高回落
+  expression: -(2 * cs_rank(((close - low) - (high - close)) / (high - low) * volume) - cs_rank(ts_argmax(close, 10)))
+  logic: 【WQ101 #60，解读为推测；省略 scale】放量且收盘靠近高点的股票随后回落；近 10 日高点出现得越早，越不像在追涨
+
+- id: W101
+  name: 日内动量
+  expression: (close - open) / (high - low + 0.001)
+  logic: 【WQ101 #101，论文原文解释】日内走强（收盘明显高于开盘）的股票，次日做多

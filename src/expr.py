@@ -22,14 +22,16 @@ import pandas as pd
 
 from src import operators as ops
 from src.contracts import (
-    ARITH_FUNCS, CS_OPS, DELAY_WINDOWS, FIELDS, GROUP_KEYS, GROUP_OPS, TS_OPS, WINDOWS,
+    ARITH_FUNCS, COMPARE_OPS, COND_OPS, CS_OPS, DELAY_WINDOWS, FIELDS, GROUP_KEYS, GROUP_OPS,
+    POWER_OPS, TS_OPS, WINDOWS,
     Market,
 )
 
 __all__ = ["ExprError", "validate", "compute"]
 
 _DELAY_OPS = ("ts_delay", "ts_delta")
-_ALL_FUNCS = {**TS_OPS, **CS_OPS, **GROUP_OPS, **ARITH_FUNCS}
+_ALL_FUNCS = {**TS_OPS, **CS_OPS, **GROUP_OPS, **ARITH_FUNCS, **POWER_OPS, **COND_OPS}
+_CMP_SYMBOL = {ast.Lt: "<", ast.Gt: ">", ast.LtE: "<=", ast.GtE: ">="}
 _MAX_LEN = 2000
 _MAX_DEPTH = 60
 
@@ -136,12 +138,22 @@ def _check(node: ast.AST, depth: int = 0) -> str:
         rk = _check(node.right, depth + 1)
         return "series" if "series" in (lk, rk) else "const"
 
+    if isinstance(node, ast.Compare):
+        if len(node.ops) != 1 or type(node.ops[0]) not in _CMP_SYMBOL:
+            raise ExprError("比较运算只能写一个 < > <= >=，例如 where(volume > ts_mean(volume, 20), x, y)；不支持 == != 和连写。")
+        lk = _check(node.left, depth + 1)
+        rk = _check(node.comparators[0], depth + 1)
+        if "series" not in (lk, rk):
+            raise ExprError("比较运算两边不能都是数字常量。")
+        return "series"
+
     if isinstance(node, ast.Call):
         if not isinstance(node.func, ast.Name):
             raise ExprError("不允许的调用形式：只能直接调用白名单算子，例如 ts_mean(close, 20)，不能用属性或方法。")
         op = node.func.id
         if op not in _ALL_FUNCS:
-            allowed = ", ".join(list(TS_OPS) + list(CS_OPS) + list(GROUP_OPS) + list(ARITH_FUNCS))
+            allowed = ", ".join(list(TS_OPS) + list(CS_OPS) + list(GROUP_OPS) + list(ARITH_FUNCS)
+                                  + list(POWER_OPS) + list(COND_OPS))
             raise ExprError(f"不允许的算子 “{op}”。可用算子只有：{allowed}。")
         if node.keywords:
             raise ExprError(f"{op} 不支持关键字参数（如 d=20），请按位置传参。")
@@ -166,6 +178,21 @@ def _check(node: ast.AST, depth: int = 0) -> str:
             _need_series(_check(args[0], depth + 1), op, args[0])
             return "series"
 
+        if op in POWER_OPS:
+            if len(args) != 2:
+                raise ExprError(f"power 需要 2 个参数：power(x, a)，a 为数字常量，收到 {len(args)} 个。")
+            _need_series(_check(args[0], depth + 1), op, args[0])
+            if _check(args[1], depth + 1) != "const":
+                raise ExprError("power 的第二个参数（指数）必须是数字常量。")
+            return "series"
+
+        if op in COND_OPS:
+            if len(args) != 3:
+                raise ExprError(f"where 需要 3 个参数：where(条件, 条件成立时的值, 否则的值)，收到 {len(args)} 个。")
+            kinds = [_check(a, depth + 1) for a in args]
+            _need_series(kinds[0], op, args[0])
+            return "series"
+
         if op in GROUP_OPS:
             if len(args) != GROUP_OPS[op] + 1:
                 raise ExprError(f"{op} 需要 2 个参数：{op}(x, sector)，收到 {len(args)} 个。")
@@ -188,7 +215,7 @@ def _need_series(kind: str, op: str, node: ast.AST) -> None:
 
 def _describe(node: ast.AST) -> str:
     names = {
-        ast.Compare: "比较运算（> < == 等）", ast.BoolOp: "逻辑运算（and / or）",
+        ast.Compare: "比较运算（只支持单个 < > <= >=）", ast.BoolOp: "逻辑运算（and / or，请改用嵌套 where）",
         ast.IfExp: "条件表达式（if else）", ast.Attribute: "属性访问（.xxx）",
         ast.Subscript: "下标（[...]）", ast.Lambda: "lambda", ast.List: "列表",
         ast.Tuple: "元组", ast.Dict: "字典", ast.Set: "集合",
@@ -238,9 +265,17 @@ def _eval(node: ast.AST, market: Market) -> Value:
         else:
             return ops.safe_div(a, b)
         return ops.clean(r) if isinstance(r, pd.DataFrame) else ops._clean_scalar(r)
+    if isinstance(node, ast.Compare):
+        a = _eval(node.left, market)
+        b = _eval(node.comparators[0], market)
+        return ops.compare(a, b, _CMP_SYMBOL[type(node.ops[0])])
     if isinstance(node, ast.Call):
         op = node.func.id
         args = node.args
+        if op == "power":
+            return ops.power(_eval(args[0], market), float(_eval(args[1], market)))
+        if op == "where":
+            return ops.where(*[_eval(a, market) for a in args])
         if op in TS_OPS:
             n = TS_OPS[op]
             data = [_eval(a, market) for a in args[:n]]
@@ -251,7 +286,7 @@ def _eval(node: ast.AST, market: Market) -> Value:
         if op == "cs_zscore":
             return ops.cs_zscore(_eval(args[0], market), market.universe)
         if op == "group_neutralize":
-            return ops.group_neutralize(_eval(args[0], market), market.sector, market.universe)
+            return ops.group_neutralize(_eval(args[0], market), market.group(args[1].id), market.universe)
         if op == "log":
             return ops.log(_eval(args[0], market))
         if op == "abs":

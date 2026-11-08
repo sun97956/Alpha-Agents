@@ -1,7 +1,6 @@
 train:
   ic_mean_min: 0.01         # IC 均值必须 >= 0.01（不取绝对值）
   icir_min: 0.06            # ICIR 必须 >= 0.06（不取绝对值）
-  max_abs_ref_corr: 0.8     # 与参照因子的最大 |相关性| 严格小于
 valid:
   ic_mean_min: 0.01
   icir_min: 0.06

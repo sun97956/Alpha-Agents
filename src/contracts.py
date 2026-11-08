@@ -30,13 +30,17 @@ FIELDS: tuple[str, ...] = ("open", "high", "low", "close", "volume", "mktcap", "
 TS_OPS: dict[str, int] = {
     "ts_mean": 1, "ts_std": 1, "ts_sum": 1, "ts_max": 1, "ts_min": 1, "ts_skew": 1,
     "ts_rank": 1, "ts_delay": 1, "ts_delta": 1, "ts_corr": 2,
+    "ts_cov": 2, "decay_linear": 1, "ts_argmax": 1, "ts_argmin": 1,
 }
 CS_OPS: dict[str, int] = {"cs_rank": 1, "cs_zscore": 1}
-GROUP_OPS: dict[str, int] = {"group_neutralize": 1}      # 第二个参数固定为标识符 sector
+GROUP_OPS: dict[str, int] = {"group_neutralize": 1}      # 第二个参数为分组标识符（见 GROUP_KEYS）
 ARITH_FUNCS: dict[str, int] = {"log": 1, "abs": 1, "sign": 1}
-GROUP_KEYS: tuple[str, ...] = ("sector",)
+POWER_OPS: dict[str, int] = {"power": 1}                # power(x, a)：a 为数字常量；sign(x)*|x|^a
+COND_OPS: dict[str, int] = {"where": 3}                 # where(cond, a, b)：cond>0 取 a，否则取 b
+COMPARE_OPS: tuple[str, ...] = ("<", ">", "<=", ">=")   # 比较结果为 1.0 / 0.0
+GROUP_KEYS: tuple[str, ...] = ("sector", "industry", "subindustry")   # GICS 一级 / 三级 / 四级
 
-WINDOWS: tuple[int, ...] = (5, 10, 20, 60, 120, 250)
+WINDOWS: tuple[int, ...] = (2, 3, 5, 10, 20, 60, 120, 250)
 DELAY_WINDOWS: tuple[int, ...] = (1,) + WINDOWS            # 仅 ts_delay / ts_delta 可用 1
 
 MAIN_HORIZON: int = 5                                      # 门槛只看 h=5
@@ -88,6 +92,14 @@ class Market:
     sector: pd.DataFrame               # float64；当日 GICS gsector（按时点取，PRD 6.2），无则 NaN
     fwd_ret: dict[int, pd.DataFrame]   # key ∈ HORIZONS，由 compute_fwd_ret 生成
     end: pd.Timestamp                  # 数据截止日
+    industry: Optional[pd.DataFrame] = None      # float64；当日 GICS gind（按时点取）
+    subindustry: Optional[pd.DataFrame] = None   # float64；当日 GICS gsubind（按时点取）
+
+    def group(self, key: str) -> pd.DataFrame:
+        g = getattr(self, key, None)
+        if g is None:
+            raise ValueError(f"Market 没有分组 {key}")
+        return g
 
     @property
     def dates(self) -> pd.DatetimeIndex:
@@ -334,7 +346,12 @@ def make_fake_market(n_days: int = 300, n_stocks: int = 150, seed: int = 0,
     sec = rng.choice(SECTOR_CODES, size=n_stocks).astype("float64")
     sector = pd.DataFrame(np.tile(sec, (n_days, 1)), index=dates, columns=permnos)
     sector.iloc[n_days // 2:, 4] = 45.0 if sec[4] != 45.0 else 20.0
+    # 行业 / 子行业：在一级行业下再细分，编码方式与 GICS 一致（gind = gsector*10000 + ...）
+    sub_ind = rng.integers(1, 4, size=n_stocks)
+    sub_sub = rng.integers(1, 3, size=n_stocks)
+    industry = sector * 10000 + np.tile(sub_ind * 1010, (n_days, 1))
+    subindustry = industry * 100 + np.tile(sub_sub * 10, (n_days, 1))
 
     fwd_ret = {h: compute_fwd_ret(fields["close"], h) for h in HORIZONS}
     return Market(fields=fields, universe=universe, sector=sector,
-                  fwd_ret=fwd_ret, end=dates[-1])
+                  fwd_ret=fwd_ret, end=dates[-1], industry=industry, subindustry=subindustry)

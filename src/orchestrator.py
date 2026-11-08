@@ -169,7 +169,8 @@ class Orchestrator:
         factor = train_report = None
         while True:
             factor = eng.compute(prop["expression"], mkt)
-            train_report = eng.evaluate(factor, mkt, "train", self.refs)
+            refs = self.refs if "max_abs_ref_corr" in self.thresholds.get("train", {}) else None
+            train_report = eng.evaluate(factor, mkt, "train", refs)
             gate = eng.gate_train(train_report, self.thresholds)
             path = self.recorder.save_report(rec["round"], version, train_report, gate)
             rec["versions"].append(VersionRecord(

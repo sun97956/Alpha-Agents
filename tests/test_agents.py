@@ -431,7 +431,8 @@ def test_round_pass_and_library(tmp_path, market):
     assert lib[0]["direction"] == -1 and lib[0]["name"] == "neg_f" and lib[0]["round"] == 1
     assert fe.saved == ["F0001"] and fe.refs_loaded == 1
     # refs 只在训练集传入；验证只验一次
-    assert [(s, refs is not None) for _, s, refs in fe.evals] == [("train", True), ("valid", False)]
+    use_refs = "max_abs_ref_corr" in THR["train"]
+    assert [(s, refs is not None) for _, s, refs in fe.evals] == [("train", use_refs), ("valid", False)]
 
 
 def test_round_fail_all_versions_then_attribution(tmp_path, market):

@@ -288,24 +288,24 @@ INVALID = [
     # 非白名单字段 / 标识符
     ("vwap", "字段"),
     ("ts_mean(returns, 5)", "字段"),
-    ("close + industry", "字段"),
+    ("industry + close", "group_neutralize"),
     ("sector", "group_neutralize"),
     ("sector * close", "group_neutralize"),
     ("ts_mean", "算子"),
     # 非白名单算子
-    ("ts_argmax(close, 5)", "算子"),
+    ("ts_foo(close, 5)", "算子"),
     ("exp(close)", "算子"),
     ("pow(close, 2)", "算子"),
     ("__import__('os')", "算子"),
     ("np.log(close)", "调用"),
     ("close.shift(1)", "调用"),
     # 窗口
-    ("ts_mean(close, 3)", "窗口"),
+    ("ts_mean(close, 7)", "窗口"),
     ("ts_mean(close, 1)", "ts_delay"),
     ("ts_sum(ret, 1)", "ts_delay"),
     ("ts_rank(close, 1)", "ts_delay"),
     ("ts_corr(close, volume, 1)", "ts_delay"),
-    ("ts_delay(close, 2)", "窗口"),
+    ("ts_delay(close, 4)", "窗口"),
     ("ts_delta(close, 0)", "窗口"),
     ("ts_delay(close, -1)", "窗口"),
     ("ts_mean(close, 5.0)", "窗口"),
@@ -319,7 +319,7 @@ INVALID = [
     ("cs_rank(close, 5)", "参数"),
     ("log(close, 2)", "参数"),
     ("group_neutralize(close)", "参数"),
-    ("group_neutralize(close, industry)", "sector"),
+    ("group_neutralize(close, country)", "sector"),
     ("group_neutralize(close, close)", "sector"),
     ("ts_mean(x=close, d=5)", "关键字"),
     ("ts_mean(5, 5)", "字段"),
@@ -334,7 +334,7 @@ INVALID = [
     ("close // 2", "运算符"),
     ("+close", "取负"),
     ("not close", "取负"),
-    ("close > 1", "比较"),
+    ("close == 1", "比较"),
     ("close if ret else open", "条件"),
     ("close[0]", "下标"),
     ("lambda: close", "lambda"),
@@ -388,7 +388,7 @@ def test_compute_shape_dtype_and_universe(market):
 
 def test_compute_rejects_invalid(market):
     with pytest.raises(ExprError):
-        compute("ts_mean(close, 3)", market)
+        compute("ts_mean(close, 7)", market)
 
 
 def test_compute_matches_operators(market):
@@ -540,3 +540,55 @@ def test_real_classics_compute(classics):
         assert f.where(~m.universe).isna().all().all(), c["id"]
         cov = f.notna().sum(axis=1)
         assert cov.iloc[-250:].mean() > 400, c["id"]       # 股票池约 500
+
+
+# ---------------------------------------------------------------------
+# 扩充算子
+# ---------------------------------------------------------------------
+
+def test_new_operators_validate():
+    for e in ["where(close > ts_mean(close, 20), ret, -ret)",
+              "where(volume >= ts_mean(volume, 20), 1, -1) * ret",
+              "decay_linear(ret, 10)", "ts_argmax(close, 10) - ts_argmin(close, 10)",
+              "ts_cov(cs_rank(close), cs_rank(volume), 5)", "power(ret, 2)",
+              "group_neutralize(ret, industry)", "group_neutralize(ret, subindustry)",
+              "ts_delta(close, 2)", "ts_mean(close, 3)"]:
+        validate(e)
+    for bad in ["power(ret, close)", "where(1, 2, 3)", "1 < 2", "close < open < high", "where(close, ret)"]:
+        with pytest.raises(ExprError):
+            validate(bad)
+
+
+def test_decay_linear_and_argmax_values():
+    idx = pd.date_range("2020-01-01", periods=5)
+    x = pd.DataFrame({1: [1.0, 3.0, 2.0, 5.0, 4.0]}, index=idx)
+    d = ops.decay_linear(x, 3)
+    assert np.isnan(d.iloc[1, 0])
+    assert d.iloc[2, 0] == pytest.approx((1 * 1 + 3 * 2 + 2 * 3) / 6)
+    am = ops.ts_argmax(x, 3)
+    assert am.iloc[2, 0] == 1 and am.iloc[3, 0] == 0 and am.iloc[4, 0] == 1
+    an = ops.ts_argmin(x, 3)
+    assert an.iloc[2, 0] == 2 and an.iloc[4, 0] == 2
+
+
+def test_where_compare_power_cov(market):
+    m = market
+    c = m.fields["close"]
+    w = compute("where(close > ts_mean(close, 20), 1, -1)", m)
+    u = m.universe
+    exp = np.where(c > c.rolling(20, min_periods=20).mean(), 1.0, -1.0)
+    ok = u & c.rolling(20, min_periods=20).mean().notna()
+    assert np.allclose(w.where(ok).to_numpy()[ok.to_numpy()], exp[ok.to_numpy()])
+    p = ops.power(pd.DataFrame({1: [-2.0, 3.0]}), 2)
+    assert list(p[1]) == [-4.0, 9.0]
+    cv = ops.ts_cov(c, m.fields["volume"], 5)
+    ref = c.rolling(5, min_periods=5).cov(m.fields["volume"])
+    assert np.allclose(cv.to_numpy(), ref.to_numpy(), equal_nan=True)
+
+
+def test_group_neutralize_industry(market):
+    g = compute("group_neutralize(ret, industry)", market)
+    row = g.iloc[100]
+    ind = market.industry.iloc[100]
+    for code in ind[row.notna()].unique():
+        assert abs(row[ind == code].mean()) < 1e-9

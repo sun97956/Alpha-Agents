@@ -198,3 +198,91 @@ def sign(x: pd.DataFrame) -> pd.DataFrame:
 def _clean_scalar(v: float) -> float:
     v = float(v)
     return float("nan") if np.isinf(v) else v
+
+
+# ---------------------------------------------------------------------
+# 扩充算子（参考 WorldQuant 101 的写法）
+# ---------------------------------------------------------------------
+
+def ts_cov(x: pd.DataFrame, y: pd.DataFrame, d: int) -> pd.DataFrame:
+    """过去 d 日 x 与 y 的样本协方差（ddof=1）。两者在窗口内必须都完整。"""
+    _check_window(d)
+    x, y = x.align(y, join="outer")
+    both = x.notna() & y.notna()
+    xm, ym = x.where(both), y.where(both)
+    return clean(xm.rolling(d, min_periods=d).cov(ym))
+
+
+def decay_linear(x: pd.DataFrame, d: int) -> pd.DataFrame:
+    """线性衰减加权均值：当日权重 d，前一日 d-1，…，最早一日 1，权重归一化。窗口内有缺失则为 NaN。"""
+    _check_window(d)
+    a = x.to_numpy(dtype="float64")
+    T, N = a.shape
+    out = np.full((T, N), np.nan)
+    if T >= d:
+        w = np.arange(1, d + 1, dtype="float64")
+        w /= w.sum()
+        win = sliding_window_view(a, window_shape=d, axis=0)   # (T-d+1, N, d)，最后一维从旧到新
+        out[d - 1:] = win @ w                                   # 有 NaN 时结果自然为 NaN
+    return clean(pd.DataFrame(out, index=x.index, columns=x.columns))
+
+
+def _ts_argext(x: pd.DataFrame, d: int, use_max: bool) -> pd.DataFrame:
+    _check_window(d)
+    a = x.to_numpy(dtype="float64")
+    T, N = a.shape
+    out = np.full((T, N), np.nan)
+    if T >= d:
+        win = sliding_window_view(a, window_shape=d, axis=0)   # (T-d+1, N, d)
+        has_nan = np.isnan(win).any(axis=-1)
+        filled = np.where(np.isnan(win), -np.inf if use_max else np.inf, win)
+        # 并列时取最近的一天：把窗口倒过来再找第一个极值
+        rev = filled[..., ::-1]
+        idx = (rev.argmax(axis=-1) if use_max else rev.argmin(axis=-1)).astype("float64")
+        idx[has_nan] = np.nan
+        out[d - 1:] = idx
+    return pd.DataFrame(out, index=x.index, columns=x.columns)
+
+
+def ts_argmax(x: pd.DataFrame, d: int) -> pd.DataFrame:
+    """过去 d 日（含当日）最大值出现在几天前：0 = 当日，d-1 = 窗口最早一天。"""
+    return _ts_argext(x, d, use_max=True)
+
+
+def ts_argmin(x: pd.DataFrame, d: int) -> pd.DataFrame:
+    """过去 d 日（含当日）最小值出现在几天前：0 = 当日，d-1 = 窗口最早一天。"""
+    return _ts_argext(x, d, use_max=False)
+
+
+def power(x: pd.DataFrame, a: float) -> pd.DataFrame:
+    """带符号的幂：sign(x) * |x|^a（与 101 的 SignedPower 一致，负数也有定义）。"""
+    with np.errstate(over="ignore", invalid="ignore"):
+        return clean(np.sign(x) * np.abs(x) ** float(a))
+
+
+def compare(a, b, op: str):
+    """比较运算，结果为 1.0 / 0.0；任一方缺失则为 NaN。"""
+    fn = {"<": np.less, ">": np.greater, "<=": np.less_equal, ">=": np.greater_equal}[op]
+    if not isinstance(a, pd.DataFrame) and not isinstance(b, pd.DataFrame):
+        return float(fn(a, b))
+    ref = a if isinstance(a, pd.DataFrame) else b
+    av = a.to_numpy(dtype="float64") if isinstance(a, pd.DataFrame) else float(a)
+    bv = b.to_numpy(dtype="float64") if isinstance(b, pd.DataFrame) else float(b)
+    with np.errstate(invalid="ignore"):
+        r = fn(av, bv).astype("float64")
+    r = np.where(np.isnan(av) | np.isnan(bv), np.nan, r)
+    return pd.DataFrame(r, index=ref.index, columns=ref.columns)
+
+
+def where(cond, a, b):
+    """cond > 0 取 a，否则取 b；cond 缺失则为 NaN。a、b 可以是宽表或数字。"""
+    ref = next(v for v in (cond, a, b) if isinstance(v, pd.DataFrame))
+    def arr(v):
+        if isinstance(v, pd.DataFrame):
+            return v.reindex(index=ref.index, columns=ref.columns).to_numpy(dtype="float64")
+        return np.full(ref.shape, float(v))
+    c, av, bv = arr(cond), arr(a), arr(b)
+    with np.errstate(invalid="ignore"):
+        r = np.where(c > 0, av, bv)
+    r = np.where(np.isnan(c), np.nan, r)
+    return clean(pd.DataFrame(r, index=ref.index, columns=ref.columns))

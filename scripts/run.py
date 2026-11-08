@@ -61,7 +61,9 @@ def main(argv=None) -> int:
     orch = Orchestrator(market=market, llm=llm, engine=engine,
                         thresholds=load_thresholds(thr_path),
                         thresholds_sha256=thresholds_sha256(thr_path),
-                        classics=load_classics(ROOT / "library" / "classic_factors.yaml"),
+                        classics=load_classics(ROOT / "library" / "classic_factors.yaml")
+                        + (load_classics(ROOT / "library" / "wq101_factors.yaml")
+                           if (ROOT / "library" / "wq101_factors.yaml").exists() else []),
                         refs=refs, runs_dir=runs_dir,
                         library_path=library_path,
                         cache_dir=write_cache, run_id=run_id,

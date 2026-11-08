@@ -8,7 +8,7 @@
 - 针对明细里暴露的问题改：IC 太弱、ICIR 太低、换手太高等。
 - 门槛要求 IC 均值和 ICIR 为正（因子值越大、预期收益越高）。如果 IC 显著为负，说明数据方向与假设相反：
   不要为了凑符号而在公式外硬加负号；如果你认为数据在否定这条假设，把 status 设为 "cannot_build" 并在 reason 里说明。
-- 公式规则与构建时相同：只能用给定字段、算子、窗口（只有 ts_delay / ts_delta 可以用 1），group_neutralize 第二个参数写 sector。
+- 公式规则与构建时相同：只能用给定字段、算子、窗口（只有 ts_delay / ts_delta 可以用 1），group_neutralize 第二个参数只能是 sector / industry / subindustry。
 - 如果你认为这条假设已无法用现有算子更好地表达，可以把 status 设为 "cannot_build" 并写明 reason。
 
 输出格式：只输出一个 JSON 对象，不要输出任何其他文字，键名必须完全一致：

@@ -54,6 +54,12 @@ def thresholds() -> dict:
 
 
 @pytest.fixture(scope="module")
+def thr_corr(thresholds) -> dict:
+    """门槛文件已不含相关性门槛；去重逻辑仍保留，用这个夹具单独测试。"""
+    return {"train": dict(thresholds["train"], max_abs_ref_corr=0.8), "valid": thresholds["valid"]}
+
+
+@pytest.fixture(scope="module")
 def rev5_train(market) -> dict:
     return ev.evaluate(stub_rev5(market), market, "train")
 
@@ -76,7 +82,7 @@ def checks_by_name(res) -> dict:
 def test_load_thresholds(thresholds):
     assert thresholds["train"]["ic_mean_min"] == 0.01
     assert thresholds["train"]["icir_min"] == 0.06
-    assert thresholds["train"]["max_abs_ref_corr"] == 0.8
+    assert "max_abs_ref_corr" not in thresholds["train"]       # 暂不做相关性门槛
     assert thresholds["valid"] == {"ic_mean_min": 0.01, "icir_min": 0.06}
 
 
@@ -319,8 +325,8 @@ def test_empty_refs_dict(market):
 # 训练门
 # ---------------------------------------------------------------------
 
-def test_gate_train_pass(thresholds):
-    res = ev.gate_train(make_report(), thresholds)
+def test_gate_train_pass(thr_corr):
+    res = ev.gate_train(make_report(), thr_corr)
     assert res["passed"] is True
     c = checks_by_name(res)
     assert set(c) == {"ic_mean", "icir", "max_ref_corr"}
@@ -331,8 +337,8 @@ def test_gate_train_pass(thresholds):
     assert c["max_ref_corr"]["threshold"] == 0.8
 
 
-def test_gate_train_negative_factor_fails(thresholds):
-    res = ev.gate_train(make_report(ic_mean=-0.03, icir=-0.1, max_ref_corr=-0.2), thresholds)
+def test_gate_train_negative_factor_fails(thr_corr):
+    res = ev.gate_train(make_report(ic_mean=-0.03, icir=-0.1, max_ref_corr=-0.2), thr_corr)
     assert res["passed"] is False                     # 不取绝对值：负 IC 不达标
     c = checks_by_name(res)
     assert c["ic_mean"]["value"] == pytest.approx(-0.03) and c["ic_mean"]["passed"] is False
@@ -355,14 +361,14 @@ def test_gate_train_icir_boundary(thresholds, ir, ok):
 
 
 @pytest.mark.parametrize("rc,ok", [(0.79, True), (0.8, False), (-0.8, False), (0.95, False), (-0.79, True)])
-def test_gate_train_ref_corr_strict(thresholds, rc, ok):
-    res = ev.gate_train(make_report(max_ref_corr=rc), thresholds)
+def test_gate_train_ref_corr_strict(thr_corr, rc, ok):
+    res = ev.gate_train(make_report(max_ref_corr=rc), thr_corr)
     assert checks_by_name(res)["max_ref_corr"]["passed"] is ok
     assert res["passed"] is ok
 
 
-def test_gate_train_missing_ref_fails(thresholds):
-    res = ev.gate_train(make_report(max_ref_corr=None, max_ref_id=None), thresholds)
+def test_gate_train_missing_ref_fails(thr_corr):
+    res = ev.gate_train(make_report(max_ref_corr=None, max_ref_id=None), thr_corr)
     assert res["passed"] is False
     assert checks_by_name(res)["max_ref_corr"]["passed"] is False
 
@@ -372,11 +378,11 @@ def test_gate_train_nan_fails(thresholds):
     assert res["passed"] is False
 
 
-def test_gate_train_end_to_end_corr_exceeds(market, thresholds):
+def test_gate_train_end_to_end_corr_exceeds(market, thr_corr):
     rev = stub_rev5(market)
     refs = {"C01_rev5": rs.to_ranks(rev, market)}
     rep = ev.evaluate(rev, market, "train", refs=refs)
-    res = ev.gate_train(rep, thresholds)
+    res = ev.gate_train(rep, thr_corr)
     assert checks_by_name(res)["max_ref_corr"]["passed"] is False
     assert res["passed"] is False
 

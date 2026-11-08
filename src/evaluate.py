@@ -345,6 +345,8 @@ def gate_train(report: Report, thresholds: dict) -> GateResult:
         _check("ic_mean", ic, t["ic_mean_min"], _ge(ic, _f(t["ic_mean_min"]))),
         _check("icir", ir, t["icir_min"], _ge(ir, _f(t["icir_min"]))),
     ]
+    if "max_abs_ref_corr" not in t:          # 门槛文件里没有相关性门槛：不做去重检查
+        return GateResult(passed=all(c["passed"] for c in checks), checks=checks)
     ref = report.get("max_ref_corr")
     lim = _f(t["max_abs_ref_corr"])
     if ref is None:

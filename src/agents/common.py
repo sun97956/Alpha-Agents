@@ -55,7 +55,7 @@ def render_data_description() -> str:
         "  - volume：复权成交量（股）",
         "  - mktcap：市值，单位**千美元**（换手率 = close*volume/(mktcap*1000)）",
         "  - ret：日收益 = close(t)/close(t-1) - 1",
-        "- 分组标识：sector（GICS 一级行业，按时点取），只能作为 group_neutralize 的第二个参数。",
+        "- 分组标识：sector / industry / subindustry（GICS 一级行业 / 行业 / 子行业，按时点取），只能作为 group_neutralize 的第二个参数。",
         f"- 评价口径：t 日收盘后算因子，标签为未来收益 close(t+1+{C.MAIN_HORIZON})/close(t+1) - 1；"
         f"每日在股票池内计算因子与标签的 Spearman 相关（Rank IC），当日有效股票少于 {C.MIN_STOCKS_PER_DAY} 只则跳过。",
         f"- 你能看到的回测明细只来自训练集（{tr[0]} 至 {tr[1]}）。",
@@ -85,11 +85,17 @@ def render_operators() -> str:
         "- ts_mean(x, d) / ts_std(x, d) / ts_sum(x, d) / ts_max(x, d) / ts_min(x, d) / ts_skew(x, d)",
         "- ts_rank(x, d)：当日值在过去 d 日中的分位（0-1）",
         "- ts_delay(x, d)：d 日前的值；ts_delta(x, d)：x - ts_delay(x, d)",
-        "- ts_corr(x, y, d)：过去 d 日 x 与 y 的相关系数",
+        "- ts_corr(x, y, d)：过去 d 日 x 与 y 的相关系数；ts_cov(x, y, d)：协方差",
+        "- decay_linear(x, d)：线性衰减加权均值（当日权重最大）",
+        "- ts_argmax(x, d) / ts_argmin(x, d)：过去 d 日最大 / 最小值出现在几天前（0 = 当日）",
         "截面算子（逐日，只在当日股票池内计算）：",
         "- cs_rank(x)：截面分位（0-1）；cs_zscore(x)：截面标准化",
-        "- group_neutralize(x, sector)：减去当日同行业均值",
-        "算术：+ - * /、取负、log(x)、abs(x)、sign(x)；数字常量。log 的输入 ≤ 0、除以 0 结果为缺失。",
+        "- group_neutralize(x, g)：减去当日同组均值；g 只能是 sector（一级行业）、industry（行业）、subindustry（子行业）",
+        "条件与比较：",
+        "- 比较 a < b、a > b、a <= b、a >= b：成立为 1、不成立为 0（每个式子只能写一个比较符）",
+        "- where(cond, a, b)：cond 成立取 a，否则取 b；多个条件请嵌套 where",
+        "算术：+ - * /、取负、log(x)、abs(x)、sign(x)、power(x, a)（sign(x)*|x|^a，a 为数字常量）；数字常量。"
+        "log 的输入 ≤ 0、除以 0 结果为缺失。",
         f"窗口 d 只能取 {{{win}}}；ts_delay 和 ts_delta 额外允许取 1。",
     ])
 
