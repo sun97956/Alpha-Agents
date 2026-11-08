@@ -120,7 +120,7 @@ def _row_corr(a: pd.DataFrame, b: pd.DataFrame, min_n: int = C.MIN_STOCKS_PER_DA
     return c.where(m.sum(axis=1) >= min_n).dropna()
 
 
-def stub_evaluate(factor, market, split, refs=None) -> dict:
+def stub_evaluate(factor, market, split, refs=None, horizon=5) -> dict:
     f = factor.where(market.universe)
 
     def ic(h):
@@ -250,7 +250,7 @@ def _check_round_record(r: dict) -> None:
     assert r["train_conclusion"] in ("pass", "fail", "cannot_build", "skipped")
     assert r["validation"] in (None, "pass", "fail")
     if r["hypothesis"] is not None:
-        assert set(r["hypothesis"]) == {"hypothesis", "logic"}
+        assert set(r["hypothesis"]) == {"hypothesis", "logic", "mechanism", "horizon"}
     for v in r["versions"]:
         assert set(v) == set(C.VersionRecord.__annotations__)
         assert 0 <= v["version"] <= C.MAX_ADJUST

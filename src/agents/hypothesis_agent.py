@@ -3,10 +3,10 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from src.contracts import Hypothesis
+from src.contracts import HOLDING_PERIODS, MECHANISMS, Hypothesis
 from src.agents.common import (AgentContext, ask_json, load_prompt, render_classics,
-                               render_data_description, render_history, render_library,
-                               render_operators, require_str)
+                               render_data_description, render_experience, render_history,
+                               render_library, render_operators, require_str)
 
 
 def build_user_prompt(ctx: AgentContext) -> str:
@@ -16,13 +16,24 @@ def build_user_prompt(ctx: AgentContext) -> str:
         render_operators(),
         render_classics(ctx.classics),
         render_library(ctx.library),
+        render_experience(ctx.experience),
         render_history(ctx.history),
         "请提出一条新的假设。",
     ])
 
 
 def _check(obj: dict) -> Hypothesis:
-    return Hypothesis(hypothesis=require_str(obj, "hypothesis"), logic=require_str(obj, "logic"))
+    mech = require_str(obj, "mechanism")
+    if mech not in MECHANISMS:
+        raise ValueError(f"mechanism 只能是：{'、'.join(MECHANISMS)}")
+    try:
+        h = int(float(str(obj.get("horizon")).strip()))
+    except (TypeError, ValueError):
+        h = -1
+    if h not in HOLDING_PERIODS:
+        raise ValueError(f"horizon 只能是 {HOLDING_PERIODS} 之一")
+    return Hypothesis(hypothesis=require_str(obj, "hypothesis"), logic=require_str(obj, "logic"),
+                      mechanism=mech, horizon=h)
 
 
 def propose(llm: Any, ctx: AgentContext, tag: Optional[dict] = None) -> Hypothesis:

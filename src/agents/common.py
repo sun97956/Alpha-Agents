@@ -35,6 +35,7 @@ class AgentContext:
     classics: list[dict] = field(default_factory=list)      # ClassicFactor
     library: list[dict] = field(default_factory=list)       # LibraryEntry
     history: list[dict] = field(default_factory=list)       # records.history_summary 的输出
+    experience: list[dict] = field(default_factory=list)    # records.mechanism_table 的输出
 
 
 # ---------------------------------------------------------------------
@@ -56,7 +57,7 @@ def render_data_description() -> str:
         "  - mktcap：市值，单位**千美元**（换手率 = close*volume/(mktcap*1000)）",
         "  - ret：日收益 = close(t)/close(t-1) - 1",
         "- 分组标识：sector / industry / subindustry（GICS 一级行业 / 行业 / 子行业，按时点取），只能作为 group_neutralize 的第二个参数。",
-        f"- 评价口径：t 日收盘后算因子，标签为未来收益 close(t+1+{C.MAIN_HORIZON})/close(t+1) - 1；"
+        "- 评价口径：t 日收盘后算因子，标签为未来收益 close(t+1+h)/close(t+1) - 1，h 为假设声明的持有期（1、5、20 日）；"
         f"每日在股票池内计算因子与标签的 Spearman 相关（Rank IC），当日有效股票少于 {C.MIN_STOCKS_PER_DAY} 只则跳过。",
         f"- 你能看到的回测明细只来自训练集（{tr[0]} 至 {tr[1]}）。",
         _render_thresholds(),
@@ -122,18 +123,34 @@ def render_library(library: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def render_experience(rows: list[dict]) -> str:
+    """机制经验表：程序按机制类别汇总历史轮次（只含训练集结论和验证的通过/不通过）。"""
+    lines = ["## 机制经验表（按机制类别汇总历史研究）"]
+    if not rows:
+        lines.append("（暂无）")
+        return "\n".join(lines)
+    lines.append("| 机制 | 尝试 | 训练达标 | 验证通过 | 声明持有期分布 | 实际最强期限分布 | 复盘结论分布 | 最近的经验 |")
+    lines.append("|---|---|---|---|---|---|---|---|")
+    for r in rows:
+        lines.append(f"| {r['mechanism']} | {r['tries']} | {r['train_pass']} | {r['valid_pass']} | "
+                     f"{r['declared']} | {r['best']} | {r['conclusions']} | {' / '.join(r['lessons']) or '-'} |")
+    return "\n".join(lines)
+
+
 def render_history(history: list[dict]) -> str:
     lines = [f"## 历史轮次摘要（最近 {C.HISTORY_ROUNDS} 轮，旧→新）"]
     if not history:
         lines.append("（暂无）")
     for h in history:
         attr = h.get("attribution") or {}
-        attr_s = f"{attr.get('attribution')}（{attr.get('note', '')}）" if attr else "-"
+        attr_s = (f"{attr.get('conclusion', '-')}，最强期限 {attr.get('best_horizon', '-')} 日，"
+                  f"问题在 {attr.get('attribution')}；经验：{attr.get('lesson', '')}") if attr else "-"
         lines.append(
-            f"- [{h.get('run_id', '')} 第 {h.get('round')} 轮] 假设：{h.get('hypothesis') or '-'}；"
+            f"- [{h.get('run_id', '')} 第 {h.get('round')} 轮] [{h.get('mechanism') or '-'}，"
+            f"{h.get('horizon') or '-'} 日] 假设：{h.get('hypothesis') or '-'}；"
             f"逻辑：{h.get('logic') or '-'}；训练结论：{h.get('train_conclusion')}；"
             f"训练集 IC {_fmt(h.get('train_ic_mean'))}、ICIR {_fmt(h.get('train_icir'))}；"
-            f"归因：{attr_s}；验证：{h.get('validation') or '-'}")
+            f"复盘：{attr_s}；验证：{h.get('validation') or '-'}")
     return "\n".join(lines)
 
 

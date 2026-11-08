@@ -190,7 +190,8 @@ def _daily_ic(f: pd.DataFrame, market: Market, uni: pd.DataFrame, h: int,
 # =====================================================================
 
 def evaluate(factor: pd.DataFrame, market: Market, split: Split,
-             refs: dict[str, pd.DataFrame] | None = None) -> Report:
+             refs: dict[str, pd.DataFrame] | None = None,
+             horizon: int = MAIN_HORIZON) -> Report:
     """在 split 段上计算回测明细（PRD 第 9 节）。refs 只允许在 split="train" 时传入。"""
     if split not in SPLITS:
         raise ValueError(f"未知的数据段：{split!r}")
@@ -200,10 +201,13 @@ def evaluate(factor: pd.DataFrame, market: Market, split: Split,
     uni = _universe(market)
     f = _align(factor, market).where(uni)
 
-    # ---- 主口径 h = MAIN_HORIZON ----
-    dates = _split_dates(market, split, MAIN_HORIZON)
+    H = int(horizon)
+    if H not in market.fwd_ret:
+        raise ValueError(f"不支持的持有期 {H}")
+    # ---- 主口径 h = 声明的持有期 ----
+    dates = _split_dates(market, split, H)
     dates = pd.DatetimeIndex(dates).intersection(market.dates)
-    ic = _daily_ic(f, market, uni, MAIN_HORIZON, dates)
+    ic = _daily_ic(f, market, uni, H, dates)
     n_days, ic_mean, ic_std, icir, t_stat, pos = _ic_stats(ic)
 
     # 覆盖：主口径 IC 日期上，每日股票池内有因子值的股票数的均值
@@ -221,7 +225,7 @@ def evaluate(factor: pd.DataFrame, market: Market, split: Split,
     decay: dict[str, float] = {}
     horizons: dict[str, dict] = {}
     for h in HORIZONS:
-        if h == MAIN_HORIZON:
+        if h == H:
             hn, hm, hir, hpos = n_days, ic_mean, icir, pos
         else:
             d_h = pd.DatetimeIndex(_split_dates(market, split, h)).intersection(market.dates)
@@ -230,7 +234,7 @@ def evaluate(factor: pd.DataFrame, market: Market, split: Split,
         horizons[str(h)] = {"ic_mean": hm, "icir": hir, "ic_pos_ratio": hpos, "n_days": hn}
 
     # ---- 分组收益（只用主口径有效 IC 日）----
-    quantile_ret = _quantile_returns(f, market, uni, pd.DatetimeIndex(ic_valid.index))
+    quantile_ret = _quantile_returns(f, market, uni, pd.DatetimeIndex(ic_valid.index), H)
     long_short = _f(quantile_ret[-1] - quantile_ret[0])
 
     # ---- 换手：相邻两个交易日（都在主口径 IC 日期内）因子截面 Rank 相关的均值 ----
@@ -244,6 +248,7 @@ def evaluate(factor: pd.DataFrame, market: Market, split: Split,
 
     return Report(
         split=str(split),
+        horizon=H,
         n_days=n_days,
         coverage_mean=coverage_mean,
         ic_mean=ic_mean,
@@ -263,12 +268,12 @@ def evaluate(factor: pd.DataFrame, market: Market, split: Split,
 
 
 def _quantile_returns(f: pd.DataFrame, market: Market, uni: pd.DataFrame,
-                      days: pd.DatetimeIndex) -> list[float]:
-    """每日在因子与 fwd_ret_5 都有效的股票内按因子值分 N_QUANTILES 组，组内平均收益再对日求均值。"""
+                      days: pd.DatetimeIndex, h: int = MAIN_HORIZON) -> list[float]:
+    """每日在因子与 fwd_ret_h 都有效的股票内按因子值分 N_QUANTILES 组，组内平均收益再对日求均值。"""
     nan = float("nan")
     if len(days) == 0:
         return [nan] * N_QUANTILES
-    fwd = _align(market.fwd_ret[MAIN_HORIZON], market)
+    fwd = _align(market.fwd_ret[h], market)
     mask = uni.loc[days].to_numpy()
     x = np.where(mask, f.loc[days].to_numpy(), np.nan)
     y = np.where(mask, fwd.loc[days].to_numpy(), np.nan)

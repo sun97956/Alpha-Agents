@@ -80,10 +80,10 @@ def checks_by_name(res) -> dict:
 # ---------------------------------------------------------------------
 
 def test_load_thresholds(thresholds):
-    assert thresholds["train"]["ic_mean_min"] == 0.01
-    assert thresholds["train"]["icir_min"] == 0.06
+    assert thresholds["train"]["ic_mean_min"] == 0.015
+    assert thresholds["train"]["icir_min"] == 0.08
     assert thresholds["train"]["max_abs_ref_corr"] == 0.8      # 只和已入库因子比
-    assert thresholds["valid"] == {"ic_mean_min": 0.01, "icir_min": 0.06}
+    assert thresholds["valid"] == {"ic_mean_min": 0.015, "icir_min": 0.08}   # 与训练门统一
 
 
 def test_thresholds_sha256(tmp_path):
@@ -346,14 +346,14 @@ def test_gate_train_negative_factor_fails(thr_corr):
     assert c["max_ref_corr"]["value"] == pytest.approx(0.2)   # 相关性仍取绝对值
 
 
-@pytest.mark.parametrize("ic,ok", [(0.01, True), (0.0099, False), (-0.01, False), (-0.05, False), (0.0, False)])
+@pytest.mark.parametrize("ic,ok", [(0.015, True), (0.0149, False), (-0.015, False), (-0.05, False), (0.0, False)])
 def test_gate_train_ic_boundary(thresholds, ic, ok):
     res = ev.gate_train(make_report(ic_mean=ic), thresholds)
     assert checks_by_name(res)["ic_mean"]["passed"] is ok
     assert res["passed"] is ok
 
 
-@pytest.mark.parametrize("ir,ok", [(0.06, True), (0.0599, False), (-0.06, False), (-0.2, False)])
+@pytest.mark.parametrize("ir,ok", [(0.08, True), (0.0799, False), (-0.08, False), (-0.2, False)])
 def test_gate_train_icir_boundary(thresholds, ir, ok):
     res = ev.gate_train(make_report(icir=ir), thresholds)
     assert checks_by_name(res)["icir"]["passed"] is ok
@@ -419,7 +419,7 @@ def test_gate_valid_opposite_sign_fails(thresholds):
     assert res["passed"] is False
 
 
-@pytest.mark.parametrize("ic,ir,ok", [(0.01, 0.06, True), (0.0099, 0.1, False), (0.03, 0.059, False)])
+@pytest.mark.parametrize("ic,ir,ok", [(0.015, 0.08, True), (0.0149, 0.1, False), (0.03, 0.079, False)])
 def test_gate_valid_boundary(thresholds, ic, ir, ok):
     res = ev.gate_valid(make_report(ic_mean=ic, icir=ir), make_report(), thresholds)
     assert res["passed"] is ok

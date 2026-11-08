@@ -126,10 +126,12 @@ class Orchestrator:
 
     # ---- 上下文 ----
     def _context(self) -> AgentContext:
-        hist = records.history_summary(records.all_round_records(self.runs_dir), HISTORY_ROUNDS)
+        all_recs = records.all_round_records(self.runs_dir)
+        hist = records.history_summary(all_recs, HISTORY_ROUNDS)
         return AgentContext(classics=self.classics,
                             library=records.read_library(self.library_path),
-                            history=hist)
+                            history=hist,
+                            experience=records.mechanism_table(all_recs))
 
     # ---- 一轮 ----
     def run_round(self, round_no: int) -> dict:
@@ -176,7 +178,7 @@ class Orchestrator:
             factor = eng.compute(prop["expression"], mkt)
             use = "max_abs_ref_corr" in self.thresholds.get("train", {}) and self.refs
             refs = self.refs if use else None
-            train_report = eng.evaluate(factor, mkt, "train", refs)
+            train_report = eng.evaluate(factor, mkt, "train", refs, horizon=hyp["horizon"])
             gate = eng.gate_train(train_report, self.thresholds)
             path = self.recorder.save_report(rec["round"], version, train_report, gate)
             rec["versions"].append(VersionRecord(
@@ -211,15 +213,20 @@ class Orchestrator:
                 break
             prop = new
 
+        # 复盘：训练集结束后、验证之前做，无论是否达标（只看训练集明细）
+        if agent_versions:
+            try:
+                rec["attribution"] = factor_agent.attribute(self.llm, hyp, agent_versions, tag=tag)
+            except Exception:  # noqa: BLE001 —— 复盘失败不影响本轮结论
+                rec["attribution"] = None
         if not passed:
             rec["train_conclusion"] = "fail"
-            rec["attribution"] = factor_agent.attribute(self.llm, hyp, agent_versions, tag=tag)
             return
         rec["train_conclusion"] = "pass"
         rec["factor_name"] = prop["name"] or rec["factor_name"]
 
         # 5. 外层验证：只取结论，指标不落盘、不进记录、不给 Agent
-        valid_report = eng.evaluate(factor, mkt, "valid", None)
+        valid_report = eng.evaluate(factor, mkt, "valid", None, horizon=hyp["horizon"])
         vgate = eng.gate_valid(valid_report, train_report, self.thresholds)
         valid_passed = bool(vgate["passed"])
         del valid_report, vgate
@@ -233,7 +240,8 @@ class Orchestrator:
         ic = float(train_report["ic_mean"])
         entry = LibraryEntry(
             id=lib_id, name=prop["name"], expression=prop["expression"],
-            direction=1 if ic > 0 else -1, hypothesis=hyp["hypothesis"], logic=hyp["logic"],
+            direction=1 if ic > 0 else -1, mechanism=hyp["mechanism"], horizon=int(hyp["horizon"]),
+            hypothesis=hyp["hypothesis"], logic=hyp["logic"],
             explanation=prop["explanation"], train_ic_mean=ic,
             train_icir=float(train_report["icir"]), validation="pass",
             run_id=self.run_id, round=rec["round"], created_at=_now())

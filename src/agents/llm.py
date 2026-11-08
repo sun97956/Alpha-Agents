@@ -190,7 +190,8 @@ class MockLLM:
         if task == TASK_HYPOTHESIS:
             hyp, logic, _, _ = MOCK_IDEAS[self._n_hyp % len(MOCK_IDEAS)]
             self._n_hyp += 1
-            return json.dumps({"hypothesis": hyp, "logic": logic}, ensure_ascii=False)
+            return json.dumps({"hypothesis": hyp, "logic": logic, "mechanism": "反转", "horizon": 5},
+                              ensure_ascii=False)
         if task in (TASK_BUILD, TASK_REWRITE):
             m = re.search(r"## 本轮假设\s*\n- 假设：(.*)", user)
             cur = m.group(1).strip() if m else ""
@@ -208,8 +209,8 @@ class MockLLM:
                 "change_note": "模拟调整：换一个窗口/形式",
             }, ensure_ascii=False)
         if task == TASK_ATTRIBUTION:
-            return json.dumps({"attribution": "formula", "note": "模拟归因：公式形式可能不合适"},
-                              ensure_ascii=False)
+            return json.dumps({"conclusion": "不支持", "best_horizon": 5, "attribution": "formula",
+                               "lesson": "模拟经验", "note": "模拟复盘"}, ensure_ascii=False)
         raise RuntimeError(f"MockLLM 无法识别任务标记：{task!r}")
 
 

@@ -43,7 +43,10 @@ GROUP_KEYS: tuple[str, ...] = ("sector", "industry", "subindustry")   # GICS 一
 WINDOWS: tuple[int, ...] = (2, 3, 5, 10, 20, 60, 120, 250)
 DELAY_WINDOWS: tuple[int, ...] = (1,) + WINDOWS            # 仅 ts_delay / ts_delta 可用 1
 
-MAIN_HORIZON: int = 5                                      # 门槛只看 h=5
+MAIN_HORIZON: int = 5                                      # 默认持有期（未声明时使用）
+HOLDING_PERIODS: tuple[int, ...] = (1, 5, 20)             # 假设可声明的持有期；门槛按声明的持有期判定
+MECHANISMS: tuple[str, ...] = ("反转", "动量", "量价", "波动率", "流动性", "日内隔夜", "规模", "其他")
+REVIEW_CONCLUSIONS: tuple[str, ...] = ("支持", "不支持", "方向相反", "期限不匹配")
 HORIZONS: tuple[int, ...] = (1, 5, 10, 20, 60)             # 明细里各期限的 IC 表现
 MIN_STOCKS_PER_DAY: int = 100                              # 当日有效股票少于此数则跳过该日
 N_QUANTILES: int = 5
@@ -136,7 +139,8 @@ class Market:
 # def load_thresholds(path: str | Path = "config/thresholds.yaml") -> dict
 # def thresholds_sha256(path: str | Path = "config/thresholds.yaml") -> str
 # def evaluate(factor: pd.DataFrame, market: Market, split: Split,
-#              refs: dict[str, pd.DataFrame] | None = None) -> Report
+#              refs: dict[str, pd.DataFrame] | None = None, horizon: int = MAIN_HORIZON) -> Report
+#     horizon 为主口径持有期：总体指标、分年表、分组收益都按它计算；各期限表现另见 horizons。
 #     refs 为 None 时 max_ref_corr / max_ref_id 为 None。refs 只在 split="train" 时传入。
 # def gate_train(report: Report, thresholds: dict) -> GateResult
 # def gate_valid(valid_report: Report, train_report: Report, thresholds: dict) -> GateResult
@@ -177,7 +181,8 @@ class Report(TypedDict):
     split: str
     n_days: int                      # 有效 IC 天数
     coverage_mean: float             # 平均每日有因子值的股票数
-    ic_mean: float                   # 日 Rank IC 均值（h=MAIN_HORIZON）
+    horizon: int                     # 本明细的主口径持有期（= 假设声明的持有期）
+    ic_mean: float                   # 日 Rank IC 均值（h=horizon）
     ic_std: float
     icir: float                      # ic_mean / ic_std，日频不年化
     t_stat: float                    # ic_mean / ic_std * sqrt(n_days)
@@ -209,6 +214,8 @@ class GateResult(TypedDict):
 class Hypothesis(TypedDict):
     hypothesis: str
     logic: str
+    mechanism: str                   # MECHANISMS 之一
+    horizon: int                     # HOLDING_PERIODS 之一：预期持有期（交易日）
 
 
 class FactorProposal(TypedDict):
@@ -221,7 +228,11 @@ class FactorProposal(TypedDict):
 
 
 class Attribution(TypedDict):
-    attribution: Literal["formula", "hypothesis"]
+    """每轮复盘（训练集结束后、验证之前；只看训练集明细）。"""
+    attribution: Literal["formula", "hypothesis", "none"]   # 未达标时问题出在哪；达标为 none
+    conclusion: str                  # REVIEW_CONCLUSIONS 之一
+    best_horizon: int                # 明细里 IC 最强的期限
+    lesson: str                      # 一句话经验
     note: str
 
 
@@ -262,6 +273,8 @@ class LibraryEntry(TypedDict):
     name: str
     expression: str
     direction: Literal[1, -1]        # 训练集 IC 的符号
+    mechanism: str
+    horizon: int
     hypothesis: str
     logic: str
     explanation: str

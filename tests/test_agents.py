@@ -22,7 +22,7 @@ from src.agents.llm import (TASK_ADJUST, TASK_ATTRIBUTION, TASK_BUILD, TASK_HYPO
                             LoggedLLM, MockLLM, OpenAICompatibleLLM, detect_task)
 from src.orchestrator import Engine, Orchestrator, load_classics
 
-HYP = {"hypothesis": "测试假设", "logic": "测试逻辑"}
+HYP = {"hypothesis": "测试假设", "logic": "测试逻辑", "mechanism": "反转", "horizon": 5}
 CTX = AgentContext(classics=[{"id": "C01_rev5", "name": "5 日反转",
                               "expression": "-ts_sum(ret, 5)", "logic": "短期过度反应后回调"}])
 
@@ -200,8 +200,8 @@ def test_logged_llm_writes_prompt_reply_and_errors(tmp_path):
 # =====================================================================
 
 def test_hypothesis_parse_retry_once_then_ok():
-    m = MockLLM(script=["这不是 JSON", J(hypothesis="h", logic="l")])
-    assert hypothesis_agent.propose(m, CTX) == {"hypothesis": "h", "logic": "l"}
+    m = MockLLM(script=["这不是 JSON", J(hypothesis="h", logic="l", mechanism="动量", horizon=20)])
+    assert hypothesis_agent.propose(m, CTX) == {"hypothesis": "h", "logic": "l", "mechanism": "动量", "horizon": 20}
     assert len(m.calls) == 2
     assert "无法按约定解析" in m.calls[1][1]
 
@@ -242,7 +242,7 @@ def test_adjust_requires_change_note():
 
 
 def test_attribution_value_checked():
-    m = MockLLM(script=[J(attribution="data", note="n"), J(attribution="hypothesis", note="n")])
+    m = MockLLM(script=[J(attribution="data", conclusion="不支持", best_horizon=20, lesson="经验", note="n"), J(attribution="hypothesis", conclusion="不支持", best_horizon=20, lesson="经验", note="n")])
     assert factor_agent.attribute(m, HYP, [])["attribution"] == "hypothesis"
     assert len(m.calls) == 2
 
@@ -314,7 +314,7 @@ def test_history_summary_last_30_and_fields():
              "validation": None, "error": None} for i in range(1, 41)]
     out = records.history_summary(recs)
     assert len(out) == C.HISTORY_ROUNDS and out[0]["round"] == 11 and out[-1]["round"] == 40
-    assert set(out[0]) == {"run_id", "round", "hypothesis", "logic", "train_conclusion",
+    assert set(out[0]) == {"run_id", "round", "hypothesis", "logic", "mechanism", "horizon", "train_conclusion",
                            "train_ic_mean", "train_icir", "attribution", "validation"}
     assert out[0]["train_ic_mean"] == 0.01
 
@@ -381,7 +381,7 @@ class FakeEngine:
         f.attrs["expr"] = expr
         return f
 
-    def evaluate(self, factor, market, split, refs=None):
+    def evaluate(self, factor, market, split, refs=None, horizon=5):
         self.evals.append((factor.attrs["expr"], split, refs))
         ic = self.train_ic.get(factor.attrs["expr"], 0.0) if split == "train" else 0.555
         return {"split": split, "ic_mean": ic, "icir": ic * 3, "max_ref_corr": None,
@@ -419,7 +419,7 @@ def orch(tmp_path, market, llm, fe, **kw):
 
 
 def H():
-    return J(hypothesis="假设甲", logic="逻辑甲")
+    return J(hypothesis="假设甲", logic="逻辑甲", mechanism="反转", horizon=5)
 
 
 def test_round_pass_and_library(tmp_path, market):
@@ -438,7 +438,7 @@ def test_round_pass_and_library(tmp_path, market):
 def test_round_fail_all_versions_then_attribution(tmp_path, market):
     fe = FakeEngine({})
     script = [H(), ok_prop("e0")] + [ok_prop(f"e{i}", note=f"改{i}") for i in (1, 2, 3)] + \
-             [J(attribution="hypothesis", note="都不行")]
+             [J(attribution="hypothesis", conclusion="不支持", best_horizon=20, lesson="经验", note="都不行")]
     m = MockLLM(script=script)
     r = orch(tmp_path, market, m, fe).run_round(1)
     assert r["train_conclusion"] == "fail" and r["validation"] is None
@@ -446,7 +446,8 @@ def test_round_fail_all_versions_then_attribution(tmp_path, market):
     assert [v["expression"] for v in r["versions"]] == ["e0", "e1", "e2", "e3"]
     assert r["versions"][2]["change_note"] == "改2" and r["versions"][0]["change_note"] == ""
     assert all(v["train_gate_passed"] is False for v in r["versions"])
-    assert r["attribution"] == {"attribution": "hypothesis", "note": "都不行"}
+    assert r["attribution"] == {"attribution": "hypothesis", "conclusion": "不支持", "best_horizon": 20,
+                                "lesson": "经验", "note": "都不行"}
     assert all(s == "train" for _, s, _ in fe.evals)              # 未达标不做验证
     assert not m.script                                          # 恰好用完：3 次调整 + 1 次归因
     # 调整的输入含之前各版的训练集明细

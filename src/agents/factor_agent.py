@@ -9,7 +9,8 @@ from __future__ import annotations
 
 from typing import Any, Callable, Optional
 
-from src.contracts import MAX_EXPR_RETRY, Attribution, FactorProposal, Hypothesis
+from src.contracts import (HORIZONS, MAX_EXPR_RETRY, REVIEW_CONCLUSIONS, Attribution, FactorProposal,
+                           Hypothesis)
 from src.agents.common import (AgentContext, ExprRetryExhausted, ask_json, dumps, load_prompt,
                                render_classics, render_data_description, render_library,
                                render_operators, require_str)
@@ -22,7 +23,9 @@ Validator = Callable[[str], None]
 # ---------------------------------------------------------------------
 
 def _hyp_block(h: Hypothesis) -> str:
-    return f"## 本轮假设\n- 假设：{h['hypothesis']}\n- 经济逻辑：{h['logic']}"
+    return (f"## 本轮假设\n- 假设：{h['hypothesis']}\n- 经济逻辑：{h['logic']}"
+            f"\n- 机制类别：{h.get('mechanism', '-')}\n- 声明的持有期：{h.get('horizon', '-')} 日"
+            "（训练门、验证门都按这个持有期判定）")
 
 
 def render_versions(versions: list[dict]) -> str:
@@ -70,7 +73,7 @@ def adjust_user_prompt(ctx: AgentContext, hyp: Hypothesis, versions: list[dict])
 
 def attribution_user_prompt(hyp: Hypothesis, versions: list[dict]) -> str:
     return "\n\n".join([_hyp_block(hyp), render_versions(versions),
-                        "本轮训练集最终未达标，请判断失败主要出在公式还是假设。"])
+                        "请对本轮研究做复盘。"])
 
 
 # ---------------------------------------------------------------------
@@ -104,9 +107,19 @@ def _make_check(require_change_note: bool) -> Callable[[dict], FactorProposal]:
 
 def _check_attr(obj: dict) -> Attribution:
     a = require_str(obj, "attribution")
-    if a not in ("formula", "hypothesis"):
-        raise ValueError('attribution 只能是 "formula" 或 "hypothesis"')
-    return Attribution(attribution=a, note=require_str(obj, "note"))
+    if a not in ("formula", "hypothesis", "none"):
+        raise ValueError('attribution 只能是 "formula"、"hypothesis" 或 "none"')
+    c = require_str(obj, "conclusion")
+    if c not in REVIEW_CONCLUSIONS:
+        raise ValueError(f"conclusion 只能是：{'、'.join(REVIEW_CONCLUSIONS)}")
+    try:
+        bh = int(float(str(obj.get("best_horizon")).strip()))
+    except (TypeError, ValueError):
+        bh = -1
+    if bh not in HORIZONS:
+        raise ValueError(f"best_horizon 只能是 {HORIZONS} 之一")
+    return Attribution(attribution=a, conclusion=c, best_horizon=bh,
+                       lesson=require_str(obj, "lesson"), note=require_str(obj, "note"))
 
 
 # ---------------------------------------------------------------------
@@ -153,6 +166,6 @@ def adjust(llm: Any, ctx: AgentContext, hyp: Hypothesis, versions: list[dict],
 
 def attribute(llm: Any, hyp: Hypothesis, versions: list[dict],
               tag: Optional[dict] = None) -> Attribution:
-    """归因：只在本轮训练集最终未达标时调用一次。"""
+    """复盘：本轮训练集结束后（验证之前）调用一次，无论是否达标。"""
     return ask_json(llm, load_prompt("factor_attribution"), attribution_user_prompt(hyp, versions),
                     _check_attr, tag={"agent": "factor", "call": "attribute", **(tag or {})})
