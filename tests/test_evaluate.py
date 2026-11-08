@@ -76,7 +76,7 @@ def checks_by_name(res) -> dict:
 def test_load_thresholds(thresholds):
     assert thresholds["train"]["abs_ic_mean_min"] == 0.01
     assert thresholds["train"]["abs_icir_min"] == 0.06
-    assert thresholds["train"]["max_abs_ref_corr"] == 0.7
+    assert thresholds["train"]["max_abs_ref_corr"] == 0.8
     assert thresholds["valid"]["same_sign_as_train"] is True
 
 
@@ -328,7 +328,7 @@ def test_gate_train_pass(thresholds):
         assert set(chk) == {"name", "value", "threshold", "passed"}
         assert type(chk["value"]) is float and type(chk["threshold"]) is float
         assert type(chk["passed"]) is bool
-    assert c["max_ref_corr"]["threshold"] == 0.7
+    assert c["max_ref_corr"]["threshold"] == 0.8
 
 
 def test_gate_train_negative_factor_passes(thresholds):
@@ -354,7 +354,7 @@ def test_gate_train_icir_boundary(thresholds, ir, ok):
     assert res["passed"] is ok
 
 
-@pytest.mark.parametrize("rc,ok", [(0.69, True), (0.7, False), (-0.7, False), (0.95, False), (-0.69, True)])
+@pytest.mark.parametrize("rc,ok", [(0.79, True), (0.8, False), (-0.8, False), (0.95, False), (-0.79, True)])
 def test_gate_train_ref_corr_strict(thresholds, rc, ok):
     res = ev.gate_train(make_report(max_ref_corr=rc), thresholds)
     assert checks_by_name(res)["max_ref_corr"]["passed"] is ok

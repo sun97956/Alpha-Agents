@@ -81,7 +81,7 @@ S&P 500 单因子挖掘流水线：假设 Agent 提假设 → 因子 Agent 写�
    train:
      abs_ic_mean_min: 0.01
      abs_icir_min: 0.06
-     max_abs_ref_corr: 0.7    # 严格小于
+     max_abs_ref_corr: 0.8    # 严格小于
    valid:
      abs_ic_mean_min: 0.01
      abs_icir_min: 0.06

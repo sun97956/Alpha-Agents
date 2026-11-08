@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -35,6 +36,25 @@ def detect_task(system: str) -> Optional[str]:
 # =====================================================================
 # 真实模型
 # =====================================================================
+
+def _response_meta(resp: Any, latency_s: float) -> dict:
+    """提取用于 trace 的元数据：思考内容、结束原因、token 用量、耗时。"""
+    meta: dict[str, Any] = {"latency_s": round(latency_s, 2)}
+    choices = getattr(resp, "choices", None) or []
+    if choices:
+        msg = getattr(choices[0], "message", None)
+        meta["finish_reason"] = getattr(choices[0], "finish_reason", None)
+        meta["reasoning_content"] = getattr(msg, "reasoning_content", None) if msg else None
+    usage = getattr(resp, "usage", None)
+    if usage is not None:
+        details = getattr(usage, "completion_tokens_details", None)
+        meta["usage"] = {
+            "prompt_tokens": getattr(usage, "prompt_tokens", None),
+            "completion_tokens": getattr(usage, "completion_tokens", None),
+            "reasoning_tokens": getattr(details, "reasoning_tokens", None) if details else None,
+        }
+    return meta
+
 
 class OpenAICompatibleLLM:
     """通过 openai SDK 调用兼容 OpenAI 接口的服务。"""
@@ -86,7 +106,10 @@ class OpenAICompatibleLLM:
         )
         if self.extra_body:
             kwargs["extra_body"] = self.extra_body
+        self.last_meta = None
+        t0 = time.monotonic()
         resp = self._client.chat.completions.create(**kwargs)
+        self.last_meta = _response_meta(resp, time.monotonic() - t0)
         choices = getattr(resp, "choices", None)
         if not choices:
             raise RuntimeError("LLM 返回为空（没有 choices）")
@@ -214,6 +237,8 @@ class LoggedLLM:
             "run_id": self.run_id, **self.tag,
             "system": system, "user": user, "response": None, "error": None,
         }
+        if hasattr(self.inner, "last_meta"):
+            self.inner.last_meta = None
         try:
             out = self.inner.complete(system, user)
             entry["response"] = out
@@ -222,5 +247,8 @@ class LoggedLLM:
             entry["error"] = f"{type(e).__name__}: {e}"
             raise
         finally:
+            meta = getattr(self.inner, "last_meta", None)
+            if meta:
+                entry.update(meta)   # 思考内容、用量、耗时
             with open(self.log_path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(entry, ensure_ascii=False) + "\n")
