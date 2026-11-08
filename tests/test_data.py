@@ -525,7 +525,8 @@ def test_real_sector_changers(real_market):
         g = sec[sec["permno"] == p].sort_values("indfrom")
         first = g["gsector"].dropna().iloc[0]
         later = g[(g["gsector"] != first) & g["gsector"].notna()]
-        if len(later) and later["indfrom"].min() <= m.dates[-1]:
+        # 换行业必须发生在已加载区间内部：早于首个交易日（如 1999 年）的换行业在数据里看不到
+        if len(later) and m.dates[0] < later["indfrom"].min() <= m.dates[-1]:
             expect.append(p)
     got = s[expect].nunique(axis=0, dropna=True)
     assert (got >= 2).all(), got[got < 2].index.tolist()
