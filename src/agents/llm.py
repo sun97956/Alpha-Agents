@@ -198,7 +198,6 @@ class MockLLM:
             return "```json\n" + json.dumps({
                 "status": "ok", "name": idea[2], "expression": idea[3],
                 "explanation": f"模拟构建：{idea[3]}", "reason": "", "change_note": "",
-                "expected_direction": 1,
             }, ensure_ascii=False) + "\n```"
         if task == TASK_ADJUST:
             expr = MOCK_ADJUST_EXPRS[self._n_adjust % len(MOCK_ADJUST_EXPRS)]
@@ -207,7 +206,6 @@ class MockLLM:
                 "status": "ok", "name": "mock_adjusted", "expression": expr,
                 "explanation": f"模拟调整：{expr}", "reason": "",
                 "change_note": "模拟调整：换一个窗口/形式",
-                "expected_direction": 1,
             }, ensure_ascii=False)
         if task == TASK_ATTRIBUTION:
             return json.dumps({"attribution": "formula", "note": "模拟归因：公式形式可能不合适"},

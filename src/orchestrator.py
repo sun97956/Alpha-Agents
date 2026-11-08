@@ -168,18 +168,16 @@ class Orchestrator:
         while True:
             factor = eng.compute(prop["expression"], mkt)
             train_report = eng.evaluate(factor, mkt, "train", self.refs)
-            gate = eng.gate_train(train_report, self.thresholds, prop["expected_direction"])
+            gate = eng.gate_train(train_report, self.thresholds)
             path = self.recorder.save_report(rec["round"], version, train_report, gate)
             rec["versions"].append(VersionRecord(
                 version=version, expression=prop["expression"], explanation=prop["explanation"],
                 change_note=prop["change_note"], ic_mean=_f(train_report.get("ic_mean")),
                 icir=_f(train_report.get("icir")), train_gate_passed=bool(gate["passed"]),
-                expected_direction=prop["expected_direction"],
                 report_path=path, error=None))
             agent_versions.append({"version": version, "expression": prop["expression"],
                                    "explanation": prop["explanation"],
                                    "change_note": prop["change_note"],
-                                   "expected_direction": prop["expected_direction"],
                                    "report": train_report, "gate": gate})
             if gate["passed"]:
                 passed = True
@@ -195,8 +193,7 @@ class Orchestrator:
                 # 结束内层循环，按未达标处理；已算出的版本保留，整轮不作废
                 rec["versions"].append(VersionRecord(
                     version=version, expression="", explanation="", change_note="",
-                    ic_mean=None, icir=None, train_gate_passed=None,
-                    expected_direction=None, report_path=None,
+                    ic_mean=None, icir=None, train_gate_passed=None, report_path=None,
                     error=f"{type(e).__name__}: {e}"))
                 break
             if new["status"] == "cannot_build":
@@ -227,7 +224,7 @@ class Orchestrator:
         ic = float(train_report["ic_mean"])
         entry = LibraryEntry(
             id=lib_id, name=prop["name"], expression=prop["expression"],
-            direction=int(prop["expected_direction"]), hypothesis=hyp["hypothesis"], logic=hyp["logic"],
+            direction=1 if ic > 0 else -1, hypothesis=hyp["hypothesis"], logic=hyp["logic"],
             explanation=prop["explanation"], train_ic_mean=ic,
             train_icir=float(train_report["icir"]), validation="pass",
             run_id=self.run_id, round=rec["round"], created_at=_now())

@@ -31,9 +31,8 @@ def J(**kw) -> str:
     return json.dumps(kw, ensure_ascii=False)
 
 
-def ok_prop(expr="-ts_sum(ret, 10)", note="", name="f", direction=1):
-    return J(status="ok", name=name, expression=expr, explanation="说明", reason="", change_note=note,
-             expected_direction=direction)
+def ok_prop(expr="-ts_sum(ret, 10)", note="", name="f"):
+    return J(status="ok", name=name, expression=expr, explanation="说明", reason="", change_note=note)
 
 
 def accept_all(expr: str) -> None:
@@ -388,7 +387,7 @@ class FakeEngine:
         return {"split": split, "ic_mean": ic, "icir": ic * 3, "max_ref_corr": None,
                 "max_ref_id": None}
 
-    def gate_train(self, rep, thr, expected_direction=None):
+    def gate_train(self, rep, thr):
         return {"passed": abs(rep["ic_mean"]) >= 0.02, "checks": []}
 
     def gate_valid(self, vrep, trep, thr):
@@ -425,7 +424,7 @@ def H():
 
 def test_round_pass_and_library(tmp_path, market):
     fe = FakeEngine({"e0": -0.05})
-    m = MockLLM(script=[H(), ok_prop("e0", name="neg_f", direction=-1)])
+    m = MockLLM(script=[H(), ok_prop("e0", name="neg_f")])
     r = orch(tmp_path, market, m, fe).run_round(1)
     assert r["train_conclusion"] == "pass" and r["validation"] == "pass" and r["library_id"] == "F0001"
     lib = records.read_library(tmp_path / "lib.jsonl")
@@ -527,23 +526,3 @@ def test_run_log_append_only_one_line_per_round(tmp_path, market):
     assert len(lines) == 2
     assert [json.loads(x)["round"] for x in lines] == [1, 2]
     assert all(tuple(json.loads(x)) == records.ROUND_KEYS for x in lines)
-
-
-# ---------------------------------------------------------------------
-# 预期方向
-# ---------------------------------------------------------------------
-
-def test_build_requires_direction():
-    m = MockLLM(script=[J(status="ok", name="f", expression="-ts_sum(ret, 10)", explanation="",
-                          reason="", change_note=""),
-                        ok_prop(direction=-1)])
-    p = factor_agent.build(m, CTX, {"hypothesis": "h", "logic": "l"}, lambda e: None)
-    assert p["expected_direction"] == -1 and len(m.calls) == 2      # 第一次缺方向 → 重试
-
-
-def test_adjust_cannot_flip_direction():
-    versions = [{"version": 0, "expression": "-ts_sum(ret, 5)", "explanation": "", "change_note": "",
-                 "expected_direction": 1, "report": None, "gate": None}]
-    m = MockLLM(script=[ok_prop(note="翻转", direction=-1), ok_prop(note="保持", direction=1)])
-    p = factor_agent.adjust(m, CTX, {"hypothesis": "h", "logic": "l"}, versions, lambda e: None)
-    assert p["expected_direction"] == 1 and len(m.calls) == 2       # 翻转被拒 → 重试

@@ -31,8 +31,6 @@ def render_versions(versions: list[dict]) -> str:
     for v in versions:
         lines.append(f"### v{v['version']}")
         lines.append(f"- 公式：`{v.get('expression', '')}`")
-        if v.get("expected_direction") is not None:
-            lines.append(f"- 预期方向：{v['expected_direction']}")
         lines.append(f"- 说明：{v.get('explanation', '')}")
         if v.get("change_note"):
             lines.append(f"- 改动说明：{v['change_note']}")
@@ -79,19 +77,7 @@ def attribution_user_prompt(hyp: Hypothesis, versions: list[dict]) -> str:
 # 解析
 # ---------------------------------------------------------------------
 
-def _parse_direction(obj: dict) -> int:
-    raw = obj.get("expected_direction")
-    try:
-        d = int(float(str(raw).strip()))
-    except (TypeError, ValueError):
-        d = 0
-    if d not in (1, -1):
-        raise ValueError("expected_direction 必填，只能是 1 或 -1（1：因子值越大预期未来收益越高）")
-    return d
-
-
-def _make_check(require_change_note: bool,
-                fixed_direction: Optional[int] = None) -> Callable[[dict], FactorProposal]:
+def _make_check(require_change_note: bool) -> Callable[[dict], FactorProposal]:
     def check(obj: dict) -> FactorProposal:
         status = require_str(obj, "status")
         if status not in ("ok", "cannot_build"):
@@ -106,18 +92,13 @@ def _make_check(require_change_note: bool,
                 raise ValueError("调整时 change_note 必填")
             if not require_change_note:
                 change_note = ""
-            direction = _parse_direction(obj)
-            if fixed_direction is not None and direction != fixed_direction:
-                raise ValueError(f"expected_direction 由假设决定，调整时不得改变，必须为 {fixed_direction}")
             return FactorProposal(status="ok", name=name, expression=expression,
-                                  explanation=explanation, reason="", change_note=change_note,
-                                  expected_direction=direction)
+                                  explanation=explanation, reason="", change_note=change_note)
         if not reason:
             raise ValueError("status 为 cannot_build 时 reason 必填")
         return FactorProposal(status="cannot_build", name=name, expression="",
                               explanation=explanation, reason=reason,
-                              change_note=change_note if require_change_note else "",
-                              expected_direction=0)
+                              change_note=change_note if require_change_note else "")
     return check
 
 
@@ -133,9 +114,8 @@ def _check_attr(obj: dict) -> Attribution:
 # ---------------------------------------------------------------------
 
 def _with_validation(llm: Any, system: str, user: str, validate: Validator,
-                     require_change_note: bool, tag: dict,
-                     fixed_direction: Optional[int] = None) -> FactorProposal:
-    check = _make_check(require_change_note, fixed_direction)
+                     require_change_note: bool, tag: dict) -> FactorProposal:
+    check = _make_check(require_change_note)
     prop = ask_json(llm, system, user, check, tag={**tag, "rewrite": 0})
     for k in range(MAX_EXPR_RETRY + 1):
         if prop["status"] != "ok":
@@ -168,7 +148,6 @@ def adjust(llm: Any, ctx: AgentContext, hyp: Hypothesis, versions: list[dict],
     """调整：输入含本轮各版公式及其训练集明细。"""
     return _with_validation(llm, load_prompt("factor_adjust"), adjust_user_prompt(ctx, hyp, versions),
                             validate, require_change_note=True,
-                            fixed_direction=versions[0].get("expected_direction") if versions else None,
                             tag={"agent": "factor", "call": "adjust", **(tag or {})})
 
 

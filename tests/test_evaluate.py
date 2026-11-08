@@ -74,10 +74,10 @@ def checks_by_name(res) -> dict:
 # ---------------------------------------------------------------------
 
 def test_load_thresholds(thresholds):
-    assert thresholds["train"]["abs_ic_mean_min"] == 0.01
-    assert thresholds["train"]["abs_icir_min"] == 0.06
+    assert thresholds["train"]["ic_mean_min"] == 0.01
+    assert thresholds["train"]["icir_min"] == 0.06
     assert thresholds["train"]["max_abs_ref_corr"] == 0.8
-    assert thresholds["valid"]["same_sign_as_train"] is True
+    assert thresholds["valid"] == {"ic_mean_min": 0.01, "icir_min": 0.06}
 
 
 def test_thresholds_sha256(tmp_path):
@@ -323,7 +323,7 @@ def test_gate_train_pass(thresholds):
     res = ev.gate_train(make_report(), thresholds)
     assert res["passed"] is True
     c = checks_by_name(res)
-    assert set(c) == {"abs_ic_mean", "abs_icir", "max_ref_corr"}
+    assert set(c) == {"ic_mean", "icir", "max_ref_corr"}
     for chk in res["checks"]:
         assert set(chk) == {"name", "value", "threshold", "passed"}
         assert type(chk["value"]) is float and type(chk["threshold"]) is float
@@ -331,26 +331,26 @@ def test_gate_train_pass(thresholds):
     assert c["max_ref_corr"]["threshold"] == 0.8
 
 
-def test_gate_train_negative_factor_passes(thresholds):
+def test_gate_train_negative_factor_fails(thresholds):
     res = ev.gate_train(make_report(ic_mean=-0.03, icir=-0.1, max_ref_corr=-0.2), thresholds)
-    assert res["passed"] is True
+    assert res["passed"] is False                     # 不取绝对值：负 IC 不达标
     c = checks_by_name(res)
-    assert c["abs_ic_mean"]["value"] == pytest.approx(0.03)
-    assert c["abs_icir"]["value"] == pytest.approx(0.1)
-    assert c["max_ref_corr"]["value"] == pytest.approx(0.2)
+    assert c["ic_mean"]["value"] == pytest.approx(-0.03) and c["ic_mean"]["passed"] is False
+    assert c["icir"]["value"] == pytest.approx(-0.1) and c["icir"]["passed"] is False
+    assert c["max_ref_corr"]["value"] == pytest.approx(0.2)   # 相关性仍取绝对值
 
 
-@pytest.mark.parametrize("ic,ok", [(0.01, True), (0.0099, False), (-0.01, True), (-0.0099, False), (0.0, False)])
+@pytest.mark.parametrize("ic,ok", [(0.01, True), (0.0099, False), (-0.01, False), (-0.05, False), (0.0, False)])
 def test_gate_train_ic_boundary(thresholds, ic, ok):
     res = ev.gate_train(make_report(ic_mean=ic), thresholds)
-    assert checks_by_name(res)["abs_ic_mean"]["passed"] is ok
+    assert checks_by_name(res)["ic_mean"]["passed"] is ok
     assert res["passed"] is ok
 
 
-@pytest.mark.parametrize("ir,ok", [(0.06, True), (0.0599, False), (-0.06, True), (-0.05, False)])
+@pytest.mark.parametrize("ir,ok", [(0.06, True), (0.0599, False), (-0.06, False), (-0.2, False)])
 def test_gate_train_icir_boundary(thresholds, ir, ok):
     res = ev.gate_train(make_report(icir=ir), thresholds)
-    assert checks_by_name(res)["abs_icir"]["passed"] is ok
+    assert checks_by_name(res)["icir"]["passed"] is ok
     assert res["passed"] is ok
 
 
@@ -383,9 +383,11 @@ def test_gate_train_end_to_end_corr_exceeds(market, thresholds):
 
 def test_gate_train_end_to_end_pass(market, thresholds):
     refs = {"R_noise": rs.to_ranks(stub_noise(market), market)}
-    rep = ev.evaluate(-stub_rev5(market), market, "train", refs=refs)   # 负向也能通过
+    rep = ev.evaluate(stub_rev5(market), market, "train", refs=refs)
     res = ev.gate_train(rep, thresholds)
     assert res["passed"] is True, res
+    neg = ev.gate_train(ev.evaluate(-stub_rev5(market), market, "train", refs=refs), thresholds)
+    assert neg["passed"] is False                     # 方向反了就不达标
 
 
 # ---------------------------------------------------------------------
@@ -395,19 +397,18 @@ def test_gate_train_end_to_end_pass(market, thresholds):
 def test_gate_valid_pass(thresholds):
     res = ev.gate_valid(make_report(ic_mean=0.025, icir=0.08), make_report(), thresholds)
     assert res["passed"] is True
-    assert set(checks_by_name(res)) == {"abs_ic_mean", "abs_icir", "same_sign"}
+    assert set(checks_by_name(res)) == {"ic_mean", "icir"}
 
 
-def test_gate_valid_negative_both(thresholds):
+def test_gate_valid_negative_fails(thresholds):
     res = ev.gate_valid(make_report(ic_mean=-0.03, icir=-0.1), make_report(ic_mean=-0.04, icir=-0.2), thresholds)
-    assert res["passed"] is True
+    assert res["passed"] is False
 
 
 def test_gate_valid_opposite_sign_fails(thresholds):
     res = ev.gate_valid(make_report(ic_mean=-0.05, icir=-0.2), make_report(ic_mean=0.03), thresholds)
     c = checks_by_name(res)
-    assert c["abs_ic_mean"]["passed"] and c["abs_icir"]["passed"]
-    assert c["same_sign"]["passed"] is False
+    assert c["ic_mean"]["passed"] is False and c["icir"]["passed"] is False
     assert res["passed"] is False
 
 
@@ -417,11 +418,6 @@ def test_gate_valid_boundary(thresholds, ic, ir, ok):
     assert res["passed"] is ok
 
 
-def test_gate_valid_same_sign_disabled(thresholds):
-    t = {"train": thresholds["train"], "valid": dict(thresholds["valid"], same_sign_as_train=False)}
-    res = ev.gate_valid(make_report(ic_mean=-0.05, icir=-0.2), make_report(ic_mean=0.03), t)
-    assert res["passed"] is True
-    assert "same_sign" not in checks_by_name(res)
 
 
 def test_gate_valid_end_to_end(market, thresholds):
@@ -430,9 +426,9 @@ def test_gate_valid_end_to_end(market, thresholds):
     va = ev.evaluate(f, market, "valid")
     assert va["max_ref_corr"] is None
     assert ev.gate_valid(va, tr, thresholds)["passed"] is True
-    # 训练段方向相反（用取负的训练明细模拟）
-    tr_neg = ev.evaluate(-f, market, "train")
-    assert ev.gate_valid(va, tr_neg, thresholds)["passed"] is False
+    # 验证段方向反了（因子取负）就不通过
+    va_neg = ev.evaluate(-f, market, "valid")
+    assert ev.gate_valid(va_neg, tr, thresholds)["passed"] is False
 
 
 # ---------------------------------------------------------------------
@@ -510,24 +506,3 @@ def test_real_rev5_ic_positive():
         assert rep["ic_mean"] > 0, e
         assert rep["n_days"] > 3000
         assert 400 <= rep["coverage_mean"] <= 520
-
-
-# ---------------------------------------------------------------------
-# 方向必须与假设一致（thresholds.train.direction_must_match_hypothesis）
-# ---------------------------------------------------------------------
-
-def test_thresholds_require_direction(thresholds):
-    assert thresholds["train"]["direction_must_match_hypothesis"] is True
-
-
-@pytest.mark.parametrize("ic,d,ok", [(0.03, 1, True), (-0.03, -1, True), (-0.03, 1, False), (0.03, -1, False)])
-def test_gate_train_direction(thresholds, ic, d, ok):
-    res = ev.gate_train(make_report(ic_mean=ic, icir=0.1 if ic > 0 else -0.1), thresholds, expected_direction=d)
-    c = checks_by_name(res)
-    assert c["direction"]["passed"] is ok
-    assert res["passed"] is ok
-
-
-def test_gate_train_without_direction_has_no_direction_check(thresholds):
-    res = ev.gate_train(make_report(), thresholds)
-    assert "direction" not in checks_by_name(res)

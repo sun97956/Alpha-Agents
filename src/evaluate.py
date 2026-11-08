@@ -336,19 +336,15 @@ def _ge(value: float, threshold: float) -> bool:
     return (not math.isnan(value)) and value >= threshold
 
 
-def gate_train(report: Report, thresholds: dict,
-               expected_direction: Optional[int] = None) -> GateResult:
+def gate_train(report: Report, thresholds: dict) -> GateResult:
     t = thresholds["train"]
     ic = _f(report["ic_mean"])
     ir = _f(report["icir"])
+    # 不取绝对值：因子值越大必须代表预期收益越高，IC、ICIR 都要为正且达到门槛
     checks = [
-        _check("abs_ic_mean", abs(ic), t["abs_ic_mean_min"], _ge(abs(ic), _f(t["abs_ic_mean_min"]))),
-        _check("abs_icir", abs(ir), t["abs_icir_min"], _ge(abs(ir), _f(t["abs_icir_min"]))),
+        _check("ic_mean", ic, t["ic_mean_min"], _ge(ic, _f(t["ic_mean_min"]))),
+        _check("icir", ir, t["icir_min"], _ge(ir, _f(t["icir_min"]))),
     ]
-    if t.get("direction_must_match_hypothesis", False) and expected_direction is not None:
-        # IC 的符号必须等于假设声明的方向：value = sign(IC) * 预期方向，需为 +1
-        prod = float("nan") if math.isnan(ic) else float(np.sign(ic) * np.sign(expected_direction))
-        checks.append(_check("direction", prod, 1.0, (not math.isnan(prod)) and prod > 0))
     ref = report.get("max_ref_corr")
     lim = _f(t["max_abs_ref_corr"])
     if ref is None:
@@ -365,14 +361,7 @@ def gate_valid(valid_report: Report, train_report: Report, thresholds: dict) -> 
     ic = _f(valid_report["ic_mean"])
     ir = _f(valid_report["icir"])
     checks = [
-        _check("abs_ic_mean", abs(ic), t["abs_ic_mean_min"], _ge(abs(ic), _f(t["abs_ic_mean_min"]))),
-        _check("abs_icir", abs(ir), t["abs_icir_min"], _ge(abs(ir), _f(t["abs_icir_min"]))),
+        _check("ic_mean", ic, t["ic_mean_min"], _ge(ic, _f(t["ic_mean_min"]))),
+        _check("icir", ir, t["icir_min"], _ge(ir, _f(t["icir_min"]))),
     ]
-    if t.get("same_sign_as_train", True):
-        tr = _f(train_report["ic_mean"])
-        if math.isnan(ic) or math.isnan(tr):
-            prod = float("nan")
-        else:
-            prod = float(np.sign(ic) * np.sign(tr))
-        checks.append(_check("same_sign", prod, 1.0, (not math.isnan(prod)) and prod > 0))
     return GateResult(passed=all(c["passed"] for c in checks), checks=checks)
