@@ -59,9 +59,23 @@ def render_data_description() -> str:
         f"- 评价口径：t 日收盘后算因子，标签为未来收益 close(t+1+{C.MAIN_HORIZON})/close(t+1) - 1；"
         f"每日在股票池内计算因子与标签的 Spearman 相关（Rank IC），当日有效股票少于 {C.MIN_STOCKS_PER_DAY} 只则跳过。",
         f"- 你能看到的回测明细只来自训练集（{tr[0]} 至 {tr[1]}）。",
-        "- 门槛（程序判定）：|IC 均值| ≥ 0.02，|ICIR| ≥ 0.06（日频不年化），"
-        "与经典因子及已入库因子的最大 |相关性| < 0.7。负向因子允许通过。",
+        _render_thresholds(),
     ])
+
+
+THRESHOLDS_FILE = Path(__file__).resolve().parents[2] / "config" / "thresholds.yaml"
+
+
+def _render_thresholds() -> str:
+    """门槛一律从冻结的 thresholds.yaml 读取，避免提示词里写死的数字和程序判定不一致。"""
+    try:
+        import yaml
+        t = yaml.safe_load(THRESHOLDS_FILE.read_text(encoding="utf-8"))["train"]
+        return (f"- 训练门（程序判定，不取绝对值）：IC 均值 ≥ {t['ic_mean_min']}，ICIR ≥ {t['icir_min']}（日频不年化），"
+                f"与经典因子及已入库因子的最大 |相关性| < {t['max_abs_ref_corr']}。"
+                "因子值越大必须代表预期未来收益越高。")
+    except Exception:  # noqa: BLE001 —— 读不到就不写，程序判定仍以门槛文件为准
+        return "- 训练门：以程序返回的门槛判定为准；因子值越大必须代表预期未来收益越高。"
 
 
 def render_operators() -> str:
