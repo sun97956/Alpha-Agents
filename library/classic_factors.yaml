@@ -1,0 +1,104 @@
+# 经典因子库（PRD 第 13 节），只读。
+# 每项字段与 contracts.ClassicFactor 一致：id / name / expression / logic。
+# 公式全部只用 contracts.FIELDS 中的字段和 PRD 第 7 节的算子写成，运算符一律用 ASCII（* - /）。
+# mktcap 单位是千美元，换手率公式里乘 1000。
+
+- id: C01_rev5
+  name: 5 日反转
+  expression: -ts_sum(ret, 5)
+  logic: 短期过度反应后回调
+
+- id: C02_rev20
+  name: 20 日反转
+  expression: -ts_sum(ret, 20)
+  logic: 月度反转
+
+- id: C03_mom12_1
+  name: 12-1 动量
+  expression: ts_delay(close, 20) / ts_delay(close, 250) - 1
+  logic: 对信息反应不足
+
+- id: C04_mom6_1
+  name: 6-1 动量
+  expression: ts_delay(close, 20) / ts_delay(close, 120) - 1
+  logic: 同上，周期更短
+
+- id: C05_lowvol20
+  name: 低波动
+  expression: -ts_std(ret, 20)
+  logic: 低波异象
+
+- id: C06_lowvol250
+  name: 长期低波
+  expression: -ts_std(ret, 250)
+  logic: 同上
+
+- id: C07_size
+  name: 规模
+  expression: -log(mktcap)
+  logic: 小市值溢价
+
+- id: C08_turnover
+  name: 换手率
+  expression: -ts_mean(close * volume / (mktcap * 1000), 20)
+  logic: 高换手代表分歧大、被高估
+
+- id: C09_turnover_surge
+  name: 换手放大
+  expression: ts_mean(close * volume / (mktcap * 1000), 5) / ts_mean(close * volume / (mktcap * 1000), 60)
+  logic: 关注度骤升
+
+- id: C10_volume_surge
+  name: 成交量放大
+  expression: ts_mean(volume, 5) / ts_mean(volume, 60)
+  logic: 同上，用成交量衡量
+
+- id: C11_amihud
+  name: Amihud 非流动性
+  expression: ts_mean(abs(ret) / (close * volume), 20)
+  logic: 流动性差要求补偿
+
+- id: C12_max
+  name: MAX 效应
+  expression: -ts_max(ret, 20)
+  logic: 彩票型股票被追捧后跑输
+
+- id: C13_52w_high
+  name: 52 周高点距离
+  expression: close / ts_max(high, 250)
+  logic: 锚定效应
+
+- id: C14_pv_corr
+  name: 量价相关
+  expression: -ts_corr(close, volume, 20)
+  logic: 放量上涨难以持续
+
+- id: C15_range
+  name: 振幅
+  expression: -ts_mean((high - low) / close, 20)
+  logic: 日内风险与分歧
+
+- id: C16_overnight
+  name: 隔夜收益
+  expression: ts_mean(open / ts_delay(close, 1) - 1, 20)
+  logic: 隔夜与日内是不同的投资者群体
+
+- id: C17_intraday
+  name: 日内收益
+  expression: ts_mean(close / open - 1, 20)
+  logic: 同上，另一面
+
+- id: C18_ind_rev20
+  name: 行业中性反转
+  expression: group_neutralize(-ts_sum(ret, 20), sector)
+  logic: 去掉行业轮动后的个股反转
+
+- id: C19_ind_mom12_1
+  name: 行业中性动量
+  expression: group_neutralize(ts_delay(close, 20) / ts_delay(close, 250) - 1, sector)
+  logic: 个股动量，不含行业动量
+
+- id: C20_skew
+  name: 偏度
+  expression: -ts_skew(ret, 60)
+  logic: 正偏股票被高估
