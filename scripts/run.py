@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 
 import _bootstrap  # noqa: F401
 from _bootstrap import ROOT
@@ -46,14 +47,24 @@ def main(argv=None) -> int:
         print("警告：cache/ref_values/ 下没有参照因子，去重门槛形同虚设。请先运行 scripts/build_refs.py。",
               file=sys.stderr)
     llm = MockLLM() if args.mock else OpenAICompatibleLLM.from_settings(settings)
+    run_id = args.run_id
+    library_path = ROOT / "factor_library.jsonl"
+    write_cache = cache_dir
+    if args.mock:
+        # 模拟运行与真实运行隔离：run_id 加 mock_ 前缀（不进入假设 Agent 的历史），
+        # 因子库和新参照值写在本次运行目录里，不污染真实的因子库和 cache
+        from src.orchestrator import new_run_id
+        run_id = run_id or f"mock_{new_run_id()}"
+        library_path = Path(runs_dir) / run_id / "factor_library.jsonl"
+        write_cache = Path(runs_dir) / run_id / "cache"
 
     orch = Orchestrator(market=market, llm=llm, engine=engine,
                         thresholds=load_thresholds(thr_path),
                         thresholds_sha256=thresholds_sha256(thr_path),
                         classics=load_classics(ROOT / "library" / "classic_factors.yaml"),
                         refs=refs, runs_dir=runs_dir,
-                        library_path=ROOT / "factor_library.jsonl",
-                        cache_dir=cache_dir, run_id=args.run_id,
+                        library_path=library_path,
+                        cache_dir=write_cache, run_id=run_id,
                         inject_error_round=args.inject_error)
     print(f"run_id = {orch.run_id}，共 {n_rounds} 轮，数据截止 {market.end.date()}")
     for i in range(1, n_rounds + 1):

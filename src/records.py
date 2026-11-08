@@ -88,6 +88,8 @@ def all_round_records(runs_dir: PathLike) -> list[dict]:
     root = Path(runs_dir)
     if root.exists():
         for p in sorted(root.glob("*/run_log.jsonl")):
+            if p.parent.name.startswith("mock_"):     # 模拟运行不算历史
+                continue
             recs.extend(read_jsonl(p))
     recs.sort(key=lambda r: (str(r.get("timestamp", "")), str(r.get("run_id", "")), int(r.get("round", 0))))
     return recs

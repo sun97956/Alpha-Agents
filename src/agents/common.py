@@ -72,7 +72,6 @@ def _render_thresholds() -> str:
         import yaml
         t = yaml.safe_load(THRESHOLDS_FILE.read_text(encoding="utf-8"))["train"]
         return (f"- 训练门（程序判定，不取绝对值）：IC 均值 ≥ {t['ic_mean_min']}，ICIR ≥ {t['icir_min']}（日频不年化），"
-                f"与经典因子及已入库因子的最大 |相关性| < {t['max_abs_ref_corr']}。"
                 "因子值越大必须代表预期未来收益越高。")
     except Exception:  # noqa: BLE001 —— 读不到就不写，程序判定仍以门槛文件为准
         return "- 训练门：以程序返回的门槛判定为准；因子值越大必须代表预期未来收益越高。"
@@ -96,7 +95,8 @@ def render_operators() -> str:
 
 
 def render_classics(classics: list[dict]) -> str:
-    lines = ["## 经典因子库（已有的参考因子，新因子与它们相关性过高会被拒绝）"]
+    lines = ["## 经典因子库（经过检验、有经济含义的有效因子，是构建新因子的思想来源和积木）",
+             "可以借鉴它们的经济机制和公式结构、在其基础上改进或组合。"]
     if not classics:
         lines.append("（空）")
     for c in classics:
