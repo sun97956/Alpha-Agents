@@ -74,7 +74,7 @@ def checks_by_name(res) -> dict:
 # ---------------------------------------------------------------------
 
 def test_load_thresholds(thresholds):
-    assert thresholds["train"]["abs_ic_mean_min"] == 0.02
+    assert thresholds["train"]["abs_ic_mean_min"] == 0.01
     assert thresholds["train"]["abs_icir_min"] == 0.06
     assert thresholds["train"]["max_abs_ref_corr"] == 0.7
     assert thresholds["valid"]["same_sign_as_train"] is True
@@ -340,7 +340,7 @@ def test_gate_train_negative_factor_passes(thresholds):
     assert c["max_ref_corr"]["value"] == pytest.approx(0.2)
 
 
-@pytest.mark.parametrize("ic,ok", [(0.02, True), (0.0199, False), (-0.02, True), (-0.0199, False), (0.0, False)])
+@pytest.mark.parametrize("ic,ok", [(0.01, True), (0.0099, False), (-0.01, True), (-0.0099, False), (0.0, False)])
 def test_gate_train_ic_boundary(thresholds, ic, ok):
     res = ev.gate_train(make_report(ic_mean=ic), thresholds)
     assert checks_by_name(res)["abs_ic_mean"]["passed"] is ok
@@ -411,7 +411,7 @@ def test_gate_valid_opposite_sign_fails(thresholds):
     assert res["passed"] is False
 
 
-@pytest.mark.parametrize("ic,ir,ok", [(0.02, 0.06, True), (0.019, 0.1, False), (0.03, 0.059, False)])
+@pytest.mark.parametrize("ic,ir,ok", [(0.01, 0.06, True), (0.0099, 0.1, False), (0.03, 0.059, False)])
 def test_gate_valid_boundary(thresholds, ic, ir, ok):
     res = ev.gate_valid(make_report(ic_mean=ic, icir=ir), make_report(), thresholds)
     assert res["passed"] is ok
