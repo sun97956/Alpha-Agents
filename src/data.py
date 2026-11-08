@@ -107,6 +107,8 @@ def _parse_dates(s: pd.Series) -> pd.Series:
 
 
 def _to_permno(s: pd.Series) -> pd.Series:
+    # 映射表里的 permno 写成 "s10078"，先去掉开头的 s/S 再转整数
+    s = s.astype(str).str.strip().str.replace(r"^[sS]", "", regex=True)
     return pd.to_numeric(s, errors="raise").astype("int64")
 
 
