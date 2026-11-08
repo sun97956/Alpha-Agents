@@ -41,14 +41,16 @@ class OpenAICompatibleLLM:
 
     def __init__(self, base_url: str, model: str, api_key_env: str = "LLM_API_KEY",
                  temperature: float = 0.7, max_tokens: int = 2000,
-                 api_key: Optional[str] = None, timeout: float = 120.0,
-                 client: Any = None):
+                 api_key: Optional[str] = None, timeout: float = 300.0,
+                 client: Any = None, extra_body: Optional[dict] = None):
         if not model:
             raise ValueError("settings.yaml 里 llm.model 为空，请先填写模型名")
         self.base_url = base_url or None
         self.model = model
         self.temperature = float(temperature)
         self.max_tokens = int(max_tokens)
+        # 服务商特有参数（如关闭思考模式），原样透传；默认不传
+        self.extra_body = dict(extra_body) if extra_body else None
         if client is not None:              # 测试时注入假 client
             self._client = client
             return
@@ -71,22 +73,34 @@ class OpenAICompatibleLLM:
                    api_key_env=llm_cfg.get("api_key_env", "LLM_API_KEY"),
                    temperature=llm_cfg.get("temperature", 0.7),
                    max_tokens=llm_cfg.get("max_tokens", 2000),
+                   extra_body=llm_cfg.get("extra_body") or None,
                    client=client)
 
     def complete(self, system: str, user: str) -> str:
-        resp = self._client.chat.completions.create(
+        kwargs: dict = dict(
             model=self.model,
             messages=[{"role": "system", "content": system},
                       {"role": "user", "content": user}],
             temperature=self.temperature,
             max_tokens=self.max_tokens,
         )
+        if self.extra_body:
+            kwargs["extra_body"] = self.extra_body
+        resp = self._client.chat.completions.create(**kwargs)
         choices = getattr(resp, "choices", None)
         if not choices:
             raise RuntimeError("LLM 返回为空（没有 choices）")
         content = choices[0].message.content
         if content is None or not str(content).strip():
-            raise RuntimeError("LLM 返回内容为空")
+            # 常见原因：思考型模型把 max_tokens 全用在思考上，正文为空（finish_reason=length）
+            finish = getattr(choices[0], "finish_reason", None)
+            usage = getattr(resp, "usage", None)
+            details = getattr(usage, "completion_tokens_details", None) if usage else None
+            reasoning = getattr(details, "reasoning_tokens", None) if details else None
+            completion = getattr(usage, "completion_tokens", None) if usage else None
+            hint = "；可能是思考用完了 max_tokens，请调大 settings.yaml 的 llm.max_tokens" if finish == "length" else ""
+            raise RuntimeError(f"LLM 返回内容为空（finish_reason={finish}，completion_tokens={completion}，"
+                               f"reasoning_tokens={reasoning}，max_tokens={self.max_tokens}）{hint}")
         return str(content)
 
 

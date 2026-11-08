@@ -36,12 +36,20 @@ def render_versions(versions: list[dict]) -> str:
             lines.append(f"- 改动说明：{v['change_note']}")
         if v.get("error"):
             lines.append(f"- 错误：{v['error']}")
-        if v.get("report") is not None:
-            lines.append("- 训练集回测明细：")
-            lines.append("```json\n" + dumps(v["report"], indent=1) + "\n```")
-        if v.get("gate") is not None:
-            lines.append("- 训练门判定：")
-            lines.append("```json\n" + dumps(v["gate"], indent=1) + "\n```")
+        rep, gate = v.get("report"), v.get("gate")
+        if v is versions[-1]:
+            # 只有最新版本给完整明细，避免提示词随版本数膨胀、模型过度思考
+            if rep is not None:
+                lines.append("- 训练集回测明细：")
+                lines.append("```json\n" + dumps(rep, indent=1) + "\n```")
+            if gate is not None:
+                lines.append("- 训练门判定：")
+                lines.append("```json\n" + dumps(gate, indent=1) + "\n```")
+        elif rep is not None:
+            failed = [ck["name"] for ck in (gate or {}).get("checks", []) if not ck.get("passed")]
+            lines.append(f"- 训练集摘要：IC 均值={rep.get('ic_mean')}，ICIR={rep.get('icir')}，"
+                         f"最大参照相关={rep.get('max_ref_corr')}（{rep.get('max_ref_id')}），"
+                         f"未达标项={failed or '无'}")
     return "\n".join(lines)
 
 

@@ -188,12 +188,13 @@ class Orchestrator:
             try:
                 new = factor_agent.adjust(self.llm, ctx, hyp, agent_versions, eng.validate,
                                           tag={**tag, "version": version})
-            except ExprRetryExhausted as e:
-                # 调整阶段公式重写用完：记一个出错的版本，结束内层循环，按未达标处理
+            except Exception as e:  # noqa: BLE001
+                # 调整阶段失败（公式重写用完、LLM 空回复或超时等）：记一个出错的版本，
+                # 结束内层循环，按未达标处理；已算出的版本保留，整轮不作废
                 rec["versions"].append(VersionRecord(
                     version=version, expression="", explanation="", change_note="",
                     ic_mean=None, icir=None, train_gate_passed=None, report_path=None,
-                    error=str(e)))
+                    error=f"{type(e).__name__}: {e}"))
                 break
             if new["status"] == "cannot_build":
                 # 调整阶段 Agent 放弃：结束内层循环，按未达标处理，原因保留
