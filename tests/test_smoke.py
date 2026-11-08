@@ -17,7 +17,7 @@ import pytest
 
 from src import contracts as C
 from src.agents.llm import MockLLM
-from src.orchestrator import Engine, Orchestrator
+from src.orchestrator import Engine, Orchestrator, resolve
 from src.records import LIBRARY_KEYS, ROUND_KEYS, read_jsonl
 
 THRESHOLDS = {
@@ -414,7 +414,7 @@ def test_real_mock_three_rounds(tmp_path):
 
     settings = load_settings()
     cache = resolve(settings.get("cache_dir", "cache"))
-    mkt = load_market(settings["data_dir"], end=C.RUN_DATA_END, cache_dir=cache)
+    mkt = load_market(resolve(settings["data_dir"]), end=C.RUN_DATA_END, cache_dir=cache)
     assert mkt.end <= pd.Timestamp(C.RUN_DATA_END)
     assert mkt.dates.max() <= pd.Timestamp(C.RUN_DATA_END)
     eng = default_engine()

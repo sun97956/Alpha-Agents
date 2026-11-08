@@ -530,7 +530,7 @@ def test_real_classics_compute(classics):
     data_mod = pytest.importorskip("src.data")
     with open(ROOT / "config" / "settings.yaml", encoding="utf-8") as fh:
         settings = yaml.safe_load(fh)
-    m = data_mod.load_market(settings["data_dir"], cache_dir=ROOT / settings.get("cache_dir", "cache"))
+    m = data_mod.load_market(ROOT / settings["data_dir"], cache_dir=ROOT / settings.get("cache_dir", "cache"))
     assert m.end <= pd.Timestamp("2021-12-31")
     for c in classics:
         f = compute(c["expression"], m)

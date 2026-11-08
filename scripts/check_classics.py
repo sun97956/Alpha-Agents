@@ -33,7 +33,7 @@ def main(argv=None) -> int:
     from src.expr import compute
     from src.evaluate import evaluate
 
-    market = load_market(settings["data_dir"], end=RUN_DATA_END, cache_dir=cache_dir)
+    market = load_market(resolve(settings["data_dir"]), end=RUN_DATA_END, cache_dir=cache_dir)
     rows, details = [], {}
     for c in load_classics(ROOT / "library" / "classic_factors.yaml"):
         try:

@@ -28,7 +28,7 @@ def main(argv=None) -> int:
     from src.expr import compute
     from src.refstore import save_ref
 
-    market = load_market(settings["data_dir"], end=RUN_DATA_END, cache_dir=cache_dir)
+    market = load_market(resolve(settings["data_dir"]), end=RUN_DATA_END, cache_dir=cache_dir)
     classics = load_classics(ROOT / "library" / "classic_factors.yaml")
     n_ok = 0
     for c in classics:

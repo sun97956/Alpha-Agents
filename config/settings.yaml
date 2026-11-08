@@ -1,4 +1,4 @@
-data_dir: D:/Alpha-Agents/data
+data_dir: data                 # 相对项目根目录；数据放在项目里的 data\ 文件夹
 cache_dir: cache
 runs_dir: runs
 n_rounds: 10

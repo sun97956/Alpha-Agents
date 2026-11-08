@@ -466,7 +466,8 @@ def _real_dirs():
     cache = Path(s.get("cache_dir", "cache"))
     if not cache.is_absolute():
         cache = ROOT / cache
-    return Path(s["data_dir"]), cache
+    d = Path(s["data_dir"])
+    return (d if d.is_absolute() else ROOT / d), cache
 
 
 @pytest.fixture(scope="module")

@@ -40,7 +40,7 @@ def main(argv=None) -> int:
     from src.evaluate import load_thresholds, thresholds_sha256
     from src.agents.llm import MockLLM, OpenAICompatibleLLM
 
-    market = load_market(settings["data_dir"], end=RUN_DATA_END, cache_dir=cache_dir)
+    market = load_market(resolve(settings["data_dir"]), end=RUN_DATA_END, cache_dir=cache_dir)
     engine = default_engine()
     refs = engine.load_refs(cache_dir)
     llm = MockLLM() if args.mock else OpenAICompatibleLLM.from_settings(settings)

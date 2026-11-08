@@ -507,7 +507,7 @@ def test_real_rev5_ic_positive():
     data = pytest.importorskip("src.data")
     expr = pytest.importorskip("src.expr")
     settings = yaml.safe_load((ROOT / "config" / "settings.yaml").read_text(encoding="utf-8"))
-    m = data.load_market(settings["data_dir"], cache_dir=ROOT / settings.get("cache_dir", "cache"))
+    m = data.load_market(ROOT / settings["data_dir"], cache_dir=ROOT / settings.get("cache_dir", "cache"))
     for e in ["-ts_sum(ret, 5)", "-ts_sum(ret, 20)"]:
         rep = ev.evaluate(expr.compute(e, m), m, "train")
         assert rep["ic_mean"] > 0, e

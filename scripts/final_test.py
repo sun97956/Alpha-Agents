@@ -42,7 +42,7 @@ def main(argv=None) -> int:
     from src.expr import compute
     from src.evaluate import evaluate
 
-    market = load_market(settings["data_dir"], end=None, cache_dir=cache_dir)
+    market = load_market(resolve(settings["data_dir"]), end=None, cache_dir=cache_dir)
     results = []
     for e in library:
         try:
