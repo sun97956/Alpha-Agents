@@ -11,7 +11,7 @@ S&P 500 单因子挖掘流水线：假设 Agent 提假设 → 因子 Agent 写�
 - 并行开发（A/B/C/D 四条线）已结束并合并到 master，现在是维护和实验阶段。
 - 假设要声明机制类别和持有期（1/5/20 日）；门槛按声明的持有期判定：IC ≥ 0.015、ICIR ≥ 0.08（训练、验证、各持有期统一，不取绝对值），与已入库因子相关性 < 0.8。
 - 每轮训练结束后复盘，程序汇总机制经验表给假设 Agent。回测明细包含 1、5、10、20、60 日各期限表现。
-- Agent 的参考因子：`library/classic_factors.yaml`（20 个）+ `library/wq101_factors.yaml`（36 个），只给公式和逻辑，不给表现数据。
+- Agent 的参考因子：`library/classic_factors.yaml`（20 个）+ `library/wq101_factors.yaml`（36 个），给 Agent 公式和逻辑，不给表现数据。
 
 ## 环境与命令
 

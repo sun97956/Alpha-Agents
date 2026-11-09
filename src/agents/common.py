@@ -102,12 +102,14 @@ def render_operators() -> str:
 
 
 def render_classics(classics: list[dict]) -> str:
-    lines = ["## 参考因子目录（经典因子与 WQ101，仅提供名称和机制说明）",
-             "参考库用于提供机制灵感；不要把参考因子的表现数据当作依据。"]
+    lines = ["## 参考因子（经典因子与 WQ101，仅提供公式和逻辑）",
+             "参考因子是提出假设的思想来源；可以借鉴机制和公式结构，不要把参考因子的表现数据当作依据。"]
     if not classics:
         lines.append("（空）")
-    for c in classics:
-        lines.append(f"- {c.get('id', '')} {c.get('name', '')}：{c.get('logic', '')}")
+    for number, c in enumerate(classics, 1):
+        lines.append(
+            f"{number}. {c.get('name', '')}（{c.get('id', '')}）："
+            f"公式 `{c.get('expression', '')}`；逻辑：{c.get('logic', '')}")
     return "\n".join(lines)
 
 
