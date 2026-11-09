@@ -384,9 +384,10 @@ def test_hypothesis_agent_sees_history_and_library(tmp_path, market):
     hyp_prompts = [u for s, u in mock.calls if "[TASK: hypothesis]" in s]
     assert r1["hypothesis"]["hypothesis"] not in hyp_prompts[0]
     assert r1["hypothesis"]["hypothesis"] in hyp_prompts[1]
-    assert f"验证：{r1['validation']}" in hyp_prompts[1]
+    assert f"训练结论：{r1['train_conclusion']}" in hyp_prompts[1]
+    assert "ts_corr" not in hyp_prompts[1]
     if r1["library_id"]:
-        assert r1["library_id"] in hyp_prompts[1]
+        assert r1["factor_name"] in hyp_prompts[1]
 
 
 def test_history_spans_previous_runs(tmp_path, market):

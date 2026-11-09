@@ -4,20 +4,18 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from src.contracts import HOLDING_PERIODS, MECHANISMS, Hypothesis
-from src.agents.common import (AgentContext, ask_json, load_prompt, render_classics,
-                               render_data_description, render_experience, render_history,
-                               render_library, render_operators, require_str)
+from src.agents.common import (AgentContext, ask_json, load_prompt, render_experience,
+                               render_history, render_hypothesis_data_description,
+                               render_library_directory, require_str)
 
 
 def build_user_prompt(ctx: AgentContext) -> str:
-    """输入：数据说明、算子清单、经典因子库、当前因子库、历史轮次摘要。"""
+    """输入：环境说明、机制经验表、已试假设清单、当前因子库目录。"""
     return "\n\n".join([
-        render_data_description(),
-        render_operators(),
-        render_classics(ctx.classics),
-        render_library(ctx.library),
+        render_hypothesis_data_description(),
         render_experience(ctx.experience),
         render_history(ctx.history),
+        render_library_directory(ctx.library),
         "请提出一条新的假设。",
     ])
 

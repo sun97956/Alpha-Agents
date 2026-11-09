@@ -299,7 +299,8 @@ def test_hypothesis_prompt_history_has_no_errors_or_metrics_beyond_spec():
              "error": "SECRET_ERROR_TEXT"}]
     ctx = AgentContext(history=records.history_summary(recs))
     u = hypothesis_agent.build_user_prompt(ctx)
-    assert "测试假设" in u and "0.0310" in u and "验证：fail" in u and "skipped" in u
+    assert "测试假设" in u and "0.0310" not in u and "验证：fail" not in u and "skipped" in u
+    assert "ts_corr" not in u and "IC ≥" not in u
     assert "SECRET_ERROR_TEXT" not in u
 
 
@@ -314,9 +315,9 @@ def test_history_summary_last_30_and_fields():
              "validation": None, "error": None} for i in range(1, 41)]
     out = records.history_summary(recs)
     assert len(out) == C.HISTORY_ROUNDS and out[0]["round"] == 11 and out[-1]["round"] == 40
-    assert set(out[0]) == {"run_id", "round", "hypothesis", "mechanism", "horizon", "train_conclusion",
-                           "train_ic_mean", "train_icir", "validation"}
-    assert out[0]["train_ic_mean"] == 0.01
+    assert set(out[0]) == {"run_id", "round", "hypothesis", "mechanism", "horizon",
+                           "train_conclusion", "cannot_build_reason"}
+    assert out[0]["cannot_build_reason"] is None
 
 
 def test_mechanism_table_uses_numeric_reports(tmp_path):

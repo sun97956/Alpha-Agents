@@ -3,7 +3,7 @@ Agent 公共部分：提示词加载、上下文渲染、JSON 解析与重试。
 
 信息可见性（PRD 12.3）由这里的渲染函数把关：
   - 因子库只渲染名称、公式、方向、逻辑、训练集指标；
-  - 历史摘要只渲染假设、机制、期限、训练结论、训练集 IC/ICIR、验证"通过/不通过"。
+  - 假设 Agent 的已试假设清单只渲染假设、机制、期限、训练结论和 cannot_build 原因。
 """
 from __future__ import annotations
 
@@ -61,6 +61,20 @@ def render_data_description() -> str:
         f"每日在股票池内计算因子与标签的 Spearman 相关（Rank IC），当日有效股票少于 {C.MIN_STOCKS_PER_DAY} 只则跳过。",
         f"- 你能看到的回测明细只来自训练集（{tr[0]} 至 {tr[1]}）。",
         _render_thresholds(),
+    ])
+
+
+def render_hypothesis_data_description() -> str:
+    return "\n".join([
+        "## 环境说明",
+        "股票池：S&P 500 历史成分股，日频；每天纳入当日在成分区间内且有收盘价的股票。",
+        "字段：",
+        "  - open / high / low / close：复权开、高、低、收盘价",
+        "  - volume：复权成交量（股）",
+        "  - mktcap：市值，单位千美元",
+        "  - ret：日收益 = close(t)/close(t-1) - 1",
+        "  - sector / industry / subindustry：按时点取的 GICS 一级行业、行业、子行业",
+        "标签：未来收益 = close(t+1+h)/close(t+1) - 1，h 为你声明的持有期（1、5、20 日）。",
     ])
 
 
@@ -125,6 +139,15 @@ def render_library(library: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def render_library_directory(library: list[dict]) -> str:
+    lines = ["## 当前因子库目录（已通过验证入库的因子，仅提供名称和机制）"]
+    if not library:
+        lines.append("（空）")
+    for e in library:
+        lines.append(f"- {e.get('name', '')}：{e.get('mechanism', '')}")
+    return "\n".join(lines)
+
+
 def render_experience(rows: list[dict]) -> str:
     """机制经验表：只渲染程序从记录和训练报告计算出的数字。"""
     lines = ["## 机制经验表（按机制类别汇总历史研究）"]
@@ -140,16 +163,16 @@ def render_experience(rows: list[dict]) -> str:
 
 
 def render_history(history: list[dict]) -> str:
-    lines = [f"## 历史轮次摘要（最近 {C.HISTORY_ROUNDS} 轮，旧→新）"]
+    lines = [f"## 已试假设清单（最近 {C.HISTORY_ROUNDS} 轮，旧→新）"]
     if not history:
         lines.append("（暂无）")
     for h in history:
+        reason = h.get("cannot_build_reason")
+        suffix = f"；cannot_build 原因：{reason}" if reason else ""
         lines.append(
             f"- [{h.get('run_id', '')} 第 {h.get('round')} 轮] [{h.get('mechanism') or '-'}，"
             f"{h.get('horizon') or '-'} 日] 假设：{h.get('hypothesis') or '-'}；"
-            f"训练结论：{h.get('train_conclusion')}；"
-            f"训练集 IC {_fmt(h.get('train_ic_mean'))}、ICIR {_fmt(h.get('train_icir'))}；"
-            f"验证：{h.get('validation') or '-'}")
+            f"训练结论：{h.get('train_conclusion')}{suffix}")
     return "\n".join(lines)
 
 

@@ -107,15 +107,13 @@ def final_train_version(rec: dict) -> Optional[dict]:
 
 def history_summary(records: Iterable[dict], n: int = HISTORY_ROUNDS) -> list[dict]:
     """
-    假设 Agent 可见的历史摘要。只保留假设、机制、期限、训练结论、
-    最后一版训练 IC/ICIR 和验证结论。
+    假设 Agent 可见的已试假设清单。只保留假设、机制、期限、训练结论和
+    cannot_build 原因。
     """
     recs = list(records)[-n:] if n > 0 else []
     out = []
     for r in recs:
         hyp = r.get("hypothesis") or {}
-        v = final_train_version(r)
-        val = r.get("validation")
         out.append({
             "run_id": r.get("run_id"),
             "round": r.get("round"),
@@ -123,9 +121,7 @@ def history_summary(records: Iterable[dict], n: int = HISTORY_ROUNDS) -> list[di
             "mechanism": hyp.get("mechanism"),
             "horizon": hyp.get("horizon"),
             "train_conclusion": r.get("train_conclusion"),
-            "train_ic_mean": v.get("ic_mean") if v else None,
-            "train_icir": v.get("icir") if v else None,
-            "validation": val if val in ("pass", "fail") else None,
+            "cannot_build_reason": r.get("cannot_build_reason"),
         })
     return out
 
